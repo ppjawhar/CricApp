@@ -34,16 +34,70 @@ export type MatchToss = {
   bowlerId: string;
 };
 
+export type MatchStatus = "draft" | "ready" | "live" | "paused" | "awaiting-second-innings" | "completed" | "abandoned";
+
+export type ExtraType = "wide" | "no-ball" | "bye" | "leg-bye";
+export type DismissalType = "bowled" | "caught" | "lbw" | "run-out" | "stumped" | "hit-wicket";
+
+export type ScoreDelivery = {
+  id: string;
+  sequence: number;
+  innings: number;
+  strikerId: string;
+  nonStrikerId: string;
+  bowlerId: string;
+  batRuns: number;
+  completedRuns: number;
+  extraType?: ExtraType;
+  runningExtraType?: "bye" | "leg-bye";
+  extraRuns: number;
+  legal: boolean;
+  boundary?: 4 | 6;
+  wicket?: { playerId: string; type: DismissalType; fielderId?: string; survivingEnd?: "striker" | "non-striker" };
+  label: string;
+  createdAt: string;
+};
+
+export type MatchInnings = {
+  battingTeamId: MatchTeam["id"];
+  runs: number;
+  wickets: number;
+  legalBalls: number;
+  deliveries: ScoreDelivery[];
+  dismissed: string[];
+};
+
+export type MatchScoreState = {
+  innings: MatchInnings[];
+  activeInnings: number;
+  strikerId: string;
+  nonStrikerId: string;
+  bowlerId: string;
+  batterDisplayOrder: [string, string];
+  freeHit: boolean;
+  phase: "live" | "new-batter" | "new-bowler" | "innings-break" | "completed";
+  result?: string;
+  pendingDismissedEnd?: "striker" | "non-striker";
+  pendingDismissedPlayerId?: string;
+  pendingOverEnd?: boolean;
+};
+
 export type CricketMatch = {
   id: string;
   mode: "club-internal" | "club-external" | "quick";
   clubId?: string;
-  status: "ready";
+  status: MatchStatus;
   teams: [MatchTeam, MatchTeam];
   rules: MatchRules;
   toss: MatchToss;
   createdAt: string;
   createdBy: string;
+  updatedAt?: string;
+  completedAt?: string;
+  version?: number;
+  score?: MatchScoreState;
+  scoringOwnerId?: string;
+  corrections?: Array<{ id: string; deliveryId: string; original: unknown; replacement: unknown; actorId: string; createdAt: string }>;
 };
 
 const apiUrl = `https://${projectId}.supabase.co/functions/v1/make-server-28e50dbb`;
@@ -76,6 +130,41 @@ export async function createMatch(input: Omit<CricketMatch, "id" | "status" | "c
 }
 
 export async function listMatches(): Promise<CricketMatch[]> {
-  const result = await request("/matches");
-  return result.matches as CricketMatch[];
+  const { data } = await supabase.auth.getSession();
+  const cacheKey = `cricapp-matches:${data.session?.user.id || "anonymous"}`;
+  try {
+    const result = await request("/matches");
+    const matches = result.matches as CricketMatch[];
+    localStorage.setItem(cacheKey, JSON.stringify(matches));
+    return matches;
+  } catch (error) {
+    const cached = localStorage.getItem(cacheKey);
+    if (cached) return JSON.parse(cached);
+    throw error;
+  }
+}
+
+export async function getMatch(matchId: string): Promise<CricketMatch> {
+  const result = await request(`/matches/${matchId}`);
+  return result.match as CricketMatch;
+}
+
+export async function saveMatchScore(matchId: string, score: MatchScoreState, version: number): Promise<CricketMatch> {
+  const result = await request(`/matches/${matchId}/score`, {
+    method: "PUT",
+    body: JSON.stringify({ score, version }),
+  });
+  return result.match as CricketMatch;
+}
+
+export async function updateMatchStatus(matchId: string, status: "paused" | "abandoned"): Promise<CricketMatch> {
+  const result = await request(`/matches/${matchId}/status`, {
+    method: "PUT",
+    body: JSON.stringify({ status }),
+  });
+  return result.match as CricketMatch;
+}
+
+export async function deleteMatch(matchId: string): Promise<void> {
+  await request(`/matches/${matchId}`, { method: "DELETE" });
 }

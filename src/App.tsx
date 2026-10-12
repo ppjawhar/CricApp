@@ -1,10 +1,24 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import AuthProvider, { useAuth } from "./auth/AuthProvider";
-import { addClubPlayer, createClub, deleteClub, getClub, listClubs, updateClub, updateClubPlayer, type Club, type ClubPlayer } from "./lib/clubsApi";
-import { listMatches, type CricketMatch } from "./lib/matchesApi";
-import { loadActiveMatch, saveActiveMatch } from "./lib/supabaseApi";
+import {
+  addClubPlayer,
+  createClub,
+  deleteClub,
+  getClub,
+  inviteClubMember,
+  listClubs,
+  listInvitations,
+  respondToInvitation,
+  updateClub,
+  updateClubPlayer,
+  type Club,
+  type ClubInvitation,
+  type ClubPlayer,
+} from "./lib/clubsApi";
+import { deleteMatch, listMatches, type CricketMatch } from "./lib/matchesApi";
 import MatchSetup from "./matches/MatchSetup";
 import ScoringPage from "./matches/ScoringPage";
+import PageHeader from "./components/PageHeader";
 
 type IconName =
   | "home"
@@ -27,52 +41,187 @@ type IconName =
   | "users"
   | "pin"
   | "calendar"
+  | "edit"
   | "settings";
 
 const iconPaths: Record<IconName, React.ReactNode> = {
-  home: <><path d="M3 11 12 3l9 8" /><path d="M5 10v10h14V10" /><path d="M9 20v-6h6v6" /></>,
-  clubs: <><circle cx="9" cy="8" r="4" /><path d="M3 21v-2a6 6 0 0 1 12 0v2M16 4a4 4 0 0 1 0 8M17 15a6 6 0 0 1 4 6" /></>,
-  matches: <><rect x="4" y="3" width="16" height="18" rx="3" /><path d="M8 2v3M16 2v3M4 9h16M8 13h3M8 17h6" /></>,
-  user: <><circle cx="12" cy="8" r="4" /><path d="M4.5 21a7.5 7.5 0 0 1 15 0" /></>,
-  bell: <><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" /><path d="M10 21h4" /></>,
-  arrow: <><path d="M5 12h14M14 7l5 5-5 5" /></>,
+  home: (
+    <>
+      <path d="M3 11 12 3l9 8" />
+      <path d="M5 10v10h14V10" />
+      <path d="M9 20v-6h6v6" />
+    </>
+  ),
+  clubs: (
+    <>
+      <circle cx="9" cy="8" r="4" />
+      <path d="M3 21v-2a6 6 0 0 1 12 0v2M16 4a4 4 0 0 1 0 8M17 15a6 6 0 0 1 4 6" />
+    </>
+  ),
+  matches: (
+    <>
+      <rect x="4" y="3" width="16" height="18" rx="3" />
+      <path d="M8 2v3M16 2v3M4 9h16M8 13h3M8 17h6" />
+    </>
+  ),
+  user: (
+    <>
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4.5 21a7.5 7.5 0 0 1 15 0" />
+    </>
+  ),
+  bell: (
+    <>
+      <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" />
+      <path d="M10 21h4" />
+    </>
+  ),
+  arrow: (
+    <>
+      <path d="M5 12h14M14 7l5 5-5 5" />
+    </>
+  ),
   play: <path d="m9 7 8 5-8 5Z" />,
   bolt: <path d="m13 2-8 12h7l-1 8 8-12h-7Z" />,
-  shield: <><path d="M12 3 5 6v5c0 5 3 8 7 10 4-2 7-5 7-10V6Z" /><path d="m9 12 2 2 4-5" /></>,
-  sync: <><path d="M20 7h-5V2" /><path d="M20 7a8 8 0 1 0 1 8" /></>,
+  shield: (
+    <>
+      <path d="M12 3 5 6v5c0 5 3 8 7 10 4-2 7-5 7-10V6Z" />
+      <path d="m9 12 2 2 4-5" />
+    </>
+  ),
+  sync: (
+    <>
+      <path d="M20 7h-5V2" />
+      <path d="M20 7a8 8 0 1 0 1 8" />
+    </>
+  ),
   plus: <path d="M12 5v14M5 12h14" />,
   chevron: <path d="m9 18 6-6-6-6" />,
   back: <path d="m15 18-6-6 6-6" />,
-  more: <><circle cx="5" cy="12" r="1" fill="currentColor" stroke="none" /><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none" /><circle cx="19" cy="12" r="1" fill="currentColor" stroke="none" /></>,
-  undo: <><path d="M9 7 4 12l5 5" /><path d="M5 12h8a6 6 0 0 1 6 6" /></>,
-  wifi: <><path d="M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0" /><circle cx="12" cy="20" r="1" fill="currentColor" stroke="none" /></>,
-  search: <><circle cx="11" cy="11" r="7" /><path d="m16 16 5 5" /></>,
-  users: <><circle cx="8" cy="8" r="3" /><circle cx="17" cy="9" r="3" /><path d="M2 20a6 6 0 0 1 12 0M14 15a5 5 0 0 1 8 4" /></>,
-  pin: <><path d="M12 21s6-5.1 6-11a6 6 0 1 0-12 0c0 5.9 6 11 6 11Z" /><circle cx="12" cy="10" r="2" /></>,
-  calendar: <><rect x="3" y="5" width="18" height="16" rx="3" /><path d="M8 3v4M16 3v4M3 10h18" /></>,
-  settings: <><circle cx="12" cy="12" r="3" /><path d="M19 13.5v-3l-2-.7-.7-1.7.9-1.9-2.1-2.1-1.9.9-1.7-.7-.7-2h-3l-.7 2-1.7.7-1.9-.9-2.1 2.1.9 1.9-.7 1.7-2 .7v3l2 .7.7 1.7-.9 1.9 2.1 2.1 1.9-.9 1.7.7.7 2h3l.7-2 1.7-.7 1.9.9 2.1-2.1-.9-1.9.7-1.7Z" /></>,
+  more: (
+    <>
+      <circle cx="5" cy="12" r="1" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="12" r="1" fill="currentColor" stroke="none" />
+      <circle cx="19" cy="12" r="1" fill="currentColor" stroke="none" />
+    </>
+  ),
+  undo: (
+    <>
+      <path d="M9 7 4 12l5 5" />
+      <path d="M5 12h8a6 6 0 0 1 6 6" />
+    </>
+  ),
+  wifi: (
+    <>
+      <path d="M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0" />
+      <circle cx="12" cy="20" r="1" fill="currentColor" stroke="none" />
+    </>
+  ),
+  search: (
+    <>
+      <circle cx="11" cy="11" r="7" />
+      <path d="m16 16 5 5" />
+    </>
+  ),
+  users: (
+    <>
+      <circle cx="8" cy="8" r="3" />
+      <circle cx="17" cy="9" r="3" />
+      <path d="M2 20a6 6 0 0 1 12 0M14 15a5 5 0 0 1 8 4" />
+    </>
+  ),
+  pin: (
+    <>
+      <path d="M12 21s6-5.1 6-11a6 6 0 1 0-12 0c0 5.9 6 11 6 11Z" />
+      <circle cx="12" cy="10" r="2" />
+    </>
+  ),
+  calendar: (
+    <>
+      <rect x="3" y="5" width="18" height="16" rx="3" />
+      <path d="M8 3v4M16 3v4M3 10h18" />
+    </>
+  ),
+  edit: (
+    <>
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z" />
+    </>
+  ),
+  settings: (
+    <>
+      <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.09a2 2 0 0 1-1-1.74v-.51a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2Z" />
+      <circle cx="12" cy="12" r="3" />
+    </>
+  ),
 };
 
 function Icon({ name, size = 20 }: { name: IconName; size?: number }) {
-  return <svg className="icon" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{iconPaths[name]}</svg>;
+  return (
+    <svg
+      className="icon"
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {iconPaths[name]}
+    </svg>
+  );
 }
 
-function Button({ children, className = "", onClick, ariaLabel, disabled = false }: { children: React.ReactNode; className?: string; onClick?: () => void; ariaLabel?: string; disabled?: boolean }) {
-  return <button type="button" className={className} onClick={onClick} aria-label={ariaLabel} disabled={disabled}>{children}</button>;
+function Button({
+  children,
+  className = "",
+  onClick,
+  ariaLabel,
+  disabled = false,
+}: {
+  children: React.ReactNode;
+  className?: string;
+  onClick?: () => void;
+  ariaLabel?: string;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      className={className}
+      onClick={onClick}
+      aria-label={ariaLabel}
+      disabled={disabled}
+    >
+      {children}
+    </button>
+  );
 }
 
-function Avatar({ initials, tone = "dark" }: { initials: string; tone?: "dark" | "green" | "cream" }) {
+function Avatar({
+  initials,
+  tone = "dark",
+}: {
+  initials: string;
+  tone?: "dark" | "green" | "cream";
+}) {
   return <span className={`avatar avatar-${tone}`}>{initials}</span>;
 }
 
 type Tab = "Home" | "Clubs" | "Matches" | "Profile";
-type Delivery = { label: string; runs: number; wicket?: boolean };
-type SyncStatus = "loading" | "syncing" | "synced" | "local";
 
-const PHOTO = "https://images.unsplash.com/photo-1779488399581-19bcffd19520?crop=entropy&cs=tinysrgb&fit=crop&fm=jpg&q=85&w=1200";
+const PHOTO =
+  "https://images.unsplash.com/photo-1779488399581-19bcffd19520?crop=entropy&cs=tinysrgb&fit=crop&fm=jpg&q=85&w=1200";
 
 export default function App() {
-  return <AuthProvider><AuthenticatedApp /></AuthProvider>;
+  return (
+    <AuthProvider>
+      <AuthenticatedApp />
+    </AuthProvider>
+  );
 }
 
 function AuthenticatedApp() {
@@ -81,217 +230,126 @@ function AuthenticatedApp() {
   const [scoring, setScoring] = useState(false);
   const [setupEntry, setSetupEntry] = useState<"quick" | "club" | null>(null);
   const [setupClub, setSetupClub] = useState<Club | undefined>();
+  const [setupTemplate, setSetupTemplate] = useState<
+    CricketMatch | undefined
+  >();
   const [currentMatch, setCurrentMatch] = useState<CricketMatch | null>(null);
-  const [runs, setRuns] = useState(84);
-  const [wickets, setWickets] = useState(3);
-  const [balls, setBalls] = useState(57);
-  const [dataReady, setDataReady] = useState(false);
-  const [syncStatus, setSyncStatus] = useState<SyncStatus>("loading");
-  const [deliveries, setDeliveries] = useState<Delivery[]>([
-    { label: "1", runs: 1 }, { label: "•", runs: 0 }, { label: "4", runs: 4 }, { label: "2", runs: 2 }, { label: "W", runs: 0, wicket: true },
-  ]);
-  const [toast, setToast] = useState("");
-
-  useEffect(() => {
-    let active = true;
-
-    async function restoreMatch() {
-      const scoreKey = `cricapp-score:${user.id}`;
-      const saved = localStorage.getItem(scoreKey);
-      if (saved) {
-        try {
-          const state = JSON.parse(saved);
-          setRuns(state.runs ?? 84);
-          setWickets(state.wickets ?? 3);
-          setBalls(state.balls ?? 57);
-          if (Array.isArray(state.deliveries)) setDeliveries(state.deliveries);
-        } catch {
-          localStorage.removeItem(scoreKey);
-        }
-      }
-
-      try {
-        const remote = await loadActiveMatch();
-        if (active && remote) {
-          setRuns(remote.runs);
-          setWickets(remote.wickets);
-          setBalls(remote.balls);
-          setDeliveries(remote.deliveries);
-        }
-        if (active) setSyncStatus("synced");
-      } catch {
-        if (active) setSyncStatus("local");
-      } finally {
-        if (active) setDataReady(true);
-      }
-    }
-
-    restoreMatch();
-    return () => {
-      active = false;
-    };
-  }, [user.id]);
-
-  useEffect(() => {
-    if (!dataReady) return;
-
-    const state = { runs, wickets, balls, deliveries };
-    localStorage.setItem(`cricapp-score:${user.id}`, JSON.stringify(state));
-    setSyncStatus("syncing");
-
-    const timer = window.setTimeout(async () => {
-      try {
-        await saveActiveMatch(state);
-        setSyncStatus("synced");
-      } catch {
-        setSyncStatus("local");
-      }
-    }, 450);
-
-    return () => window.clearTimeout(timer);
-  }, [runs, wickets, balls, deliveries, dataReady, user.id]);
-
-  useEffect(() => {
-    if (!toast) return;
-    const timer = window.setTimeout(() => setToast(""), 1800);
-    return () => window.clearTimeout(timer);
-  }, [toast]);
-
-  const overs = `${Math.floor(balls / 6)}.${balls % 6}`;
-  const projected = useMemo(() => Math.round((runs / Math.max(balls, 1)) * 120), [runs, balls]);
-
-  function addDelivery(value: number | "W" | "WD") {
-    if (value === "W") {
-      setWickets((current) => Math.min(current + 1, 10));
-      setBalls((current) => current + 1);
-      setDeliveries((current) => [...current.slice(-5), { label: "W", runs: 0, wicket: true }]);
-    } else if (value === "WD") {
-      setRuns((current) => current + 1);
-      setDeliveries((current) => [...current.slice(-5), { label: "WD", runs: 1 }]);
-    } else {
-      setRuns((current) => current + value);
-      setBalls((current) => current + 1);
-      setDeliveries((current) => [...current.slice(-5), { label: value === 0 ? "•" : String(value), runs: value }]);
-    }
-    setToast("Saved on this device");
-  }
-
-  function undoDelivery() {
-    const last = deliveries[deliveries.length - 1];
-    if (!last) return;
-    setRuns((current) => Math.max(0, current - last.runs));
-    if (last.wicket) setWickets((current) => Math.max(0, current - 1));
-    if (last.label !== "WD") setBalls((current) => Math.max(0, current - 1));
-    setDeliveries((current) => current.slice(0, -1));
-    setToast("Last delivery undone");
-  }
 
   function startQuick() {
     setSetupClub(undefined);
+    setSetupTemplate(undefined);
     setSetupEntry("quick");
   }
 
   function startClubMatch(club: Club) {
     setSetupClub(club);
+    setSetupTemplate(undefined);
     setSetupEntry("club");
   }
 
   function beginCreatedMatch(match: CricketMatch) {
     setCurrentMatch(match);
-    setRuns(0);
-    setWickets(0);
-    setBalls(0);
-    setDeliveries([]);
     setSetupEntry(null);
+    setSetupTemplate(undefined);
     setScoring(true);
   }
 
+  async function playAgain(match: CricketMatch) {
+    setSetupTemplate(match);
+    if (match.clubId) {
+      try {
+        setSetupClub(await getClub(match.clubId));
+      } catch {
+        setSetupClub(undefined);
+      }
+      setSetupEntry("club");
+    } else {
+      setSetupClub(undefined);
+      setSetupEntry("quick");
+    }
+  }
+
   if (setupEntry) {
-    return <MatchSetup entry={setupEntry} club={setupClub} onCancel={() => setSetupEntry(null)} onCreated={beginCreatedMatch} />;
+    return (
+      <MatchSetup
+        entry={setupEntry}
+        club={setupClub}
+        template={setupTemplate}
+        onCancel={() => {
+          setSetupEntry(null);
+          setSetupTemplate(undefined);
+        }}
+        onCreated={beginCreatedMatch}
+      />
+    );
   }
 
   if (scoring && currentMatch) {
-    return <ScoringPage match={currentMatch} onExit={() => setScoring(false)} onComplete={() => { setScoring(false); setTab("Matches"); }} />;
-  }
-
-  if (scoring) {
-    const firstBattingId = currentMatch
-      ? currentMatch.toss.decision === "bat"
-        ? currentMatch.toss.winnerId
-        : currentMatch.toss.winnerId === "team-a" ? "team-b" : "team-a"
-      : "team-a";
-    const battingTeam = currentMatch?.teams.find((team) => team.id === firstBattingId);
-    const teamA = currentMatch?.teams[0]?.name || "Northside CC";
-    const teamB = currentMatch?.teams[1]?.name || "Park XI";
     return (
-      <main className="app-shell scoring-shell">
-        <header className="score-header">
-          <Button className="icon-button dark-button" onClick={() => setScoring(false)} ariaLabel="Back to home"><Icon name="back" /></Button>
-          <div className="score-head-copy">
-            <span className="eyebrow light">LIVE · 1ST INNINGS</span>
-            <strong>{teamA} vs {teamB}</strong>
-          </div>
-          <Button className="icon-button dark-button" ariaLabel="More match options"><Icon name="more" /></Button>
-        </header>
-
-        <section className="scoreboard">
-          <div className="sync-line"><span className="live-dot" /> Live scoring <span>·</span> <Icon name="wifi" size={15} /> {syncStatus === "synced" ? "Synced" : syncStatus === "syncing" ? "Sync pending" : syncStatus === "loading" ? "Restoring" : "Saved on this device"}</div>
-          <div className="score-main">
-            <div><span className="team-label">{(battingTeam?.name || teamA).toUpperCase()}</span><div className="giant-score">{runs}<small>/{wickets}</small></div></div>
-            <div className="overs-block"><strong>{overs}</strong><span>OVERS</span></div>
-          </div>
-          <div className="target-row"><span>Run rate <strong>{(runs / Math.max(balls / 6, 1)).toFixed(2)}</strong></span><span>Projected <strong>{projected}</strong></span></div>
-        </section>
-
-        <section className="players-panel">
-          <div className="player-line"><div><span className="strike-mark">*</span><strong>Arjun Mehta</strong><small>STRIKER</small></div><div className="player-stat"><strong>36</strong><small>28 BALLS</small></div></div>
-          <div className="player-line muted-line"><div><span className="strike-mark empty" /><strong>Sam Wilson</strong><small>NON-STRIKER</small></div><div className="player-stat"><strong>18</strong><small>14 BALLS</small></div></div>
-          <div className="bowler-line"><span>Bowler</span><strong>M. Ali</strong><span>2.3–0–17–1</span></div>
-        </section>
-
-        <section className="recent-strip">
-          <span className="eyebrow">THIS OVER</span>
-          <div className="ball-list">{deliveries.map((ball, index) => <span key={`${ball.label}-${index}`} className={`ball ${ball.wicket ? "wicket-ball" : ""}`}>{ball.label}</span>)}</div>
-          <span className="over-runs">{deliveries.reduce((sum, ball) => sum + ball.runs, 0)} runs</span>
-        </section>
-
-        <section className="controls-panel">
-          <div className="controls-title"><div><span className="eyebrow">ADD DELIVERY</span><strong>Runs off the bat</strong></div><Button className="undo-button" onClick={undoDelivery}><Icon name="undo" size={18} /> Undo</Button></div>
-          <div className="run-grid">
-            {[0, 1, 2, 3, 4, 6].map((value) => <Button key={value} className="run-button" onClick={() => addDelivery(value)}>{value}</Button>)}
-          </div>
-          <div className="event-grid">
-            <Button className="event-button" onClick={() => addDelivery("WD")}><span className="event-icon">WD</span><span><strong>Extras</strong><small>Wide, no-ball, byes</small></span><Icon name="chevron" /></Button>
-            <Button className="event-button wicket-event" onClick={() => addDelivery("W")}><span className="event-icon">W</span><span><strong>Wicket</strong><small>Select dismissal</small></span><Icon name="chevron" /></Button>
-          </div>
-        </section>
-        {toast && <div className="toast"><Icon name="shield" size={17} />{toast}</div>}
-      </main>
+      <ScoringPage
+        match={currentMatch}
+        onExit={() => setScoring(false)}
+        onComplete={() => {
+          setScoring(false);
+          setTab("Matches");
+        }}
+      />
     );
   }
 
   return (
     <main className="app-shell">
-      <header className="topbar">
-        <div className="brand">
-          <span className="brand-mark"><span /><i /></span>
-          <strong>CricApp</strong>
-        </div>
-        <div className="top-actions">
-          <Button className="icon-button" ariaLabel="Notifications"><Icon name="bell" /></Button>
-          <Button className="avatar-button" onClick={() => setTab("Profile")} ariaLabel="Open profile"><Avatar initials={getInitials(user.user_metadata.full_name, user.email)} tone="green" /></Button>
-        </div>
-      </header>
-
-      {tab === "Home" && <Home runs={runs} wickets={wickets} overs={overs} onResume={() => setScoring(true)} onQuick={startQuick} onClub={() => setTab("Clubs")} />}
+      {tab === "Home" && (
+        <Home
+          onResume={(match) => {
+            setCurrentMatch(match);
+            setScoring(true);
+          }}
+          onQuick={startQuick}
+          onClub={() => setTab("Clubs")}
+          onMatches={() => setTab("Matches")}
+        />
+      )}
       {tab === "Clubs" && <Clubs onStart={startClubMatch} />}
-      {tab === "Matches" && <Matches onResume={(match) => { setCurrentMatch(match); setScoring(true); }} onCreateQuick={startQuick} onCreateClub={startClubMatch} />}
-      {tab === "Profile" && <Profile name={user.user_metadata.full_name || "CricApp Player"} email={user.email || ""} onSignOut={signOut} />}
+      {tab === "Matches" && (
+        <Matches
+          onResume={(match) => {
+            setCurrentMatch(match);
+            setScoring(true);
+          }}
+          onPlayAgain={playAgain}
+          onCreateQuick={startQuick}
+          onCreateClub={startClubMatch}
+        />
+      )}
+      {tab === "Profile" && (
+        <Profile
+          name={user.user_metadata.full_name || "CricApp Player"}
+          email={user.email || ""}
+          onSignOut={signOut}
+        />
+      )}
 
       <nav className="bottom-nav" aria-label="Main navigation">
         {(["Home", "Clubs", "Matches", "Profile"] as Tab[]).map((item) => (
-          <Button key={item} className={`nav-item ${tab === item ? "active" : ""}`} onClick={() => setTab(item)}>
-            <span className="nav-icon"><Icon name={item === "Home" ? "home" : item === "Clubs" ? "clubs" : item === "Matches" ? "matches" : "user"} /></span>
+          <Button
+            key={item}
+            className={`nav-item ${tab === item ? "active" : ""}`}
+            onClick={() => setTab(item)}
+          >
+            <span className="nav-icon">
+              <Icon
+                name={
+                  item === "Home"
+                    ? "home"
+                    : item === "Clubs"
+                      ? "clubs"
+                      : item === "Matches"
+                        ? "matches"
+                        : "user"
+                }
+              />
+            </span>
             <span>{item}</span>
           </Button>
         ))}
@@ -302,59 +360,280 @@ function AuthenticatedApp() {
 
 function getInitials(name?: string, email?: string) {
   const parts = name?.trim().split(/\s+/).filter(Boolean) ?? [];
-  if (parts.length > 1) return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+  if (parts.length > 1)
+    return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return email?.slice(0, 2).toUpperCase() || "CP";
 }
 
-function Home({ runs, wickets, overs, onResume, onQuick, onClub }: { runs: number; wickets: number; overs: string; onResume: () => void; onQuick: () => void; onClub: () => void }) {
-  return <div className="page home-page">
-    <section className="welcome-row">
-      <div><span className="eyebrow">SATURDAY, 11 OCT</span><h1>Ready for the crease?</h1><p>Start a new game or pick up where you left off.</p></div>
-      <div className="weather"><span>24°</span><small>Perfect cricket weather</small></div>
-    </section>
+function Home({
+  onResume,
+  onQuick,
+  onClub,
+  onMatches,
+}: {
+  onResume: (match: CricketMatch) => void;
+  onQuick: () => void;
+  onClub: () => void;
+  onMatches: () => void;
+}) {
+  const [matches, setMatches] = useState<CricketMatch[]>([]);
+  const [clubs, setClubs] = useState<Club[]>([]);
 
-    <section className="hero-card">
-      <img src={PHOTO} alt="Cricketers playing on a green field" />
-      <div className="hero-shade" />
-      <div className="hero-content">
-        <div className="live-pill"><span /> MATCH IN PROGRESS</div>
-        <div className="hero-match"><div><span>NORTHSIDE CC</span><strong>{runs}/{wickets}</strong><small>{overs} overs</small></div><div className="versus">VS</div><div className="opponent"><span>PARK XI</span><strong>—</strong><small>Yet to bat</small></div></div>
-        <div className="hero-footer"><div><small>Current partnership</small><strong>54 runs · 37 balls</strong></div><Button className="primary-button light-button" onClick={onResume}>Resume scoring <Icon name="arrow" /></Button></div>
+  useEffect(() => {
+    Promise.all([listMatches(), listClubs()])
+      .then(([matchData, clubData]) => {
+        setMatches(matchData);
+        setClubs(clubData.myClubs);
+      })
+      .catch(() => undefined);
+  }, []);
+
+  const activeMatch = matches.find((match) =>
+    ["live", "paused", "awaiting-second-innings", "ready"].includes(
+      match.status,
+    ),
+  );
+  const activeInnings =
+    activeMatch?.score?.innings[activeMatch.score.activeInnings];
+  const completed = matches
+    .filter(
+      (match) => match.status === "completed" || match.status === "abandoned",
+    )
+    .slice(0, 3);
+  const today = new Date()
+    .toLocaleDateString(undefined, {
+      weekday: "long",
+      day: "numeric",
+      month: "short",
+    })
+    .toUpperCase();
+
+  return (
+    <>
+      <PageHeader
+        home
+        action={
+          <Button className="icon-button" ariaLabel="Notifications">
+            <Icon name="bell" />
+          </Button>
+        }
+      />
+      <div className="page home-page">
+        <section className="welcome-row">
+          <div>
+            <span className="eyebrow">{today}</span>
+            <h1>Ready for the crease?</h1>
+            <p>Start a new game or pick up where you left off.</p>
+          </div>
+        </section>
+
+        {activeMatch ? (
+          <section className="hero-card">
+            <img src={PHOTO} alt="Cricketers playing on a green field" />
+            <div className="hero-shade" />
+            <div className="hero-content">
+              <div className="live-pill">
+                <span />{" "}
+                {activeMatch.status === "ready"
+                  ? "READY TO START"
+                  : activeMatch.status.replaceAll("-", " ").toUpperCase()}
+              </div>
+              <div className="hero-match">
+                <div>
+                  <span>{activeMatch.teams[0].name.toUpperCase()}</span>
+                  <strong>
+                    {activeInnings
+                      ? `${activeInnings.runs}/${activeInnings.wickets}`
+                      : "—"}
+                  </strong>
+                  <small>
+                    {activeInnings
+                      ? `${Math.floor(activeInnings.legalBalls / activeMatch.rules.ballsPerOver)}.${activeInnings.legalBalls % activeMatch.rules.ballsPerOver} overs`
+                      : `${activeMatch.rules.overs} over match`}
+                  </small>
+                </div>
+                <div className="versus">VS</div>
+                <div className="opponent">
+                  <span>{activeMatch.teams[1].name.toUpperCase()}</span>
+                  <strong>—</strong>
+                  <small>{activeMatch.mode.replaceAll("-", " ")}</small>
+                </div>
+              </div>
+              <div className="hero-footer">
+                <div>
+                  <small>Last saved</small>
+                  <strong>
+                    {new Date(
+                      activeMatch.updatedAt || activeMatch.createdAt,
+                    ).toLocaleString()}
+                  </strong>
+                </div>
+                <Button
+                  className="primary-button light-button"
+                  onClick={() => onResume(activeMatch)}
+                >
+                  Resume scoring <Icon name="arrow" />
+                </Button>
+              </div>
+            </div>
+          </section>
+        ) : (
+          <section className="home-empty-match">
+            <span className="empty-illustration">
+              <Icon name="matches" size={29} />
+            </span>
+            <div>
+              <strong>No active match</strong>
+              <p>Create a Quick Match or start from one of your clubs.</p>
+            </div>
+          </section>
+        )}
+
+        <section className="section-block">
+          <div className="section-heading">
+            <div>
+              <span className="eyebrow">NEW MATCH</span>
+              <h2>How are you playing?</h2>
+            </div>
+          </div>
+          <div className="action-grid">
+            <Button className="action-card green-card" onClick={onQuick}>
+              <span className="action-icon">
+                <Icon name="bolt" size={25} />
+              </span>
+              <span className="action-copy">
+                <strong>Quick scoring</strong>
+                <small>Start in under 2 minutes</small>
+              </span>
+              <span className="round-arrow">
+                <Icon name="arrow" size={18} />
+              </span>
+            </Button>
+            <Button className="action-card navy-card" onClick={onClub}>
+              <span className="action-icon">
+                <Icon name="shield" size={25} />
+              </span>
+              <span className="action-copy">
+                <strong>Club match</strong>
+                <small>Use your roster & records</small>
+              </span>
+              <span className="round-arrow">
+                <Icon name="arrow" size={18} />
+              </span>
+            </Button>
+          </div>
+        </section>
+
+        <section className="section-block">
+          <div className="section-heading">
+            <div>
+              <span className="eyebrow">YOUR CLUBS</span>
+              <h2>Pick up with your team</h2>
+            </div>
+            <Button className="text-button" onClick={onClub}>
+              View all <Icon name="arrow" size={16} />
+            </Button>
+          </div>
+          <div className="club-list">
+            {clubs.slice(0, 3).map((club, index) => (
+              <Button className="club-row" key={club.id} onClick={onClub}>
+                <Avatar
+                  initials={club.initials}
+                  tone={index % 2 ? "cream" : "dark"}
+                />
+                <span className="club-copy">
+                  <strong>{club.name}</strong>
+                  <small>
+                    <Icon name="pin" size={14} />{" "}
+                    {club.location || "Location not added"} ·{" "}
+                    {club.players.length} players
+                  </small>
+                </span>
+                <span className="club-record">
+                  <strong>
+                    {club.record.wins}–{club.record.losses}
+                  </strong>
+                  <small>EXTERNAL</small>
+                </span>
+                <Icon name="chevron" />
+              </Button>
+            ))}
+            {!clubs.length && (
+              <div className="empty-note">
+                <span className="empty-ball" />
+                <div>
+                  <strong>No clubs yet</strong>
+                  <p>Create or join a club to use a shared roster.</p>
+                </div>
+              </div>
+            )}
+          </div>
+        </section>
+
+        <section className="section-block recent-section">
+          <div className="section-heading">
+            <div>
+              <span className="eyebrow">RECENT</span>
+              <h2>Last matches</h2>
+            </div>
+            <Button className="text-button" onClick={onMatches}>
+              Match history <Icon name="arrow" size={16} />
+            </Button>
+          </div>
+          {completed.map((match) => (
+            <button
+              type="button"
+              className="result-card home-result"
+              key={match.id}
+              onClick={onMatches}
+            >
+              <span
+                className={`result-badge ${match.status === "abandoned" ? "quick" : "win"}`}
+              >
+                {match.status === "abandoned" ? "ABD" : "FINAL"}
+              </span>
+              <div className="result-copy">
+                <strong>
+                  {match.teams[0].name}
+                  <span>
+                    {match.score?.innings[0]
+                      ? `${match.score.innings[0].runs}/${match.score.innings[0].wickets}`
+                      : "—"}
+                  </span>
+                </strong>
+                <p>{match.score?.result || "Match abandoned"}</p>
+                <small>
+                  {new Date(
+                    match.completedAt || match.updatedAt || match.createdAt,
+                  ).toLocaleDateString()}{" "}
+                  · {match.mode.replaceAll("-", " ")}
+                </small>
+              </div>
+              <Icon name="chevron" />
+            </button>
+          ))}
+          {!completed.length && (
+            <div className="empty-note">
+              <div>
+                <strong>No completed matches</strong>
+                <p>Completed scorecards will appear here.</p>
+              </div>
+            </div>
+          )}
+        </section>
       </div>
-    </section>
-
-    <section className="section-block">
-      <div className="section-heading"><div><span className="eyebrow">NEW MATCH</span><h2>How are you playing?</h2></div></div>
-      <div className="action-grid">
-        <Button className="action-card green-card" onClick={onQuick}><span className="action-icon"><Icon name="bolt" size={25} /></span><span className="action-copy"><strong>Quick scoring</strong><small>Start in under 2 minutes</small></span><span className="round-arrow"><Icon name="arrow" size={18} /></span></Button>
-        <Button className="action-card navy-card" onClick={onClub}><span className="action-icon"><Icon name="shield" size={25} /></span><span className="action-copy"><strong>Club match</strong><small>Use your roster & records</small></span><span className="round-arrow"><Icon name="arrow" size={18} /></span></Button>
-      </div>
-    </section>
-
-    <section className="section-block">
-      <div className="section-heading"><div><span className="eyebrow">YOUR CLUBS</span><h2>Pick up with your team</h2></div><Button className="text-button" onClick={onClub}>View all <Icon name="arrow" size={16} /></Button></div>
-      <div className="club-list">
-        <Button className="club-row" onClick={onClub}><Avatar initials="NC" tone="dark" /><span className="club-copy"><strong>Northside Cricket Club</strong><small><Icon name="pin" size={14} /> Riverside Oval · 18 players</small></span><span className="club-record"><strong>8–3</strong><small>SEASON</small></span><Icon name="chevron" /></Button>
-        <Button className="club-row" onClick={onClub}><Avatar initials="WK" tone="cream" /><span className="club-copy"><strong>Weekend Kings</strong><small><Icon name="pin" size={14} /> East Park · 12 players</small></span><span className="club-record"><strong>5–5</strong><small>SEASON</small></span><Icon name="chevron" /></Button>
-      </div>
-    </section>
-
-    <section className="section-block recent-section">
-      <div className="section-heading"><div><span className="eyebrow">RECENT</span><h2>Last matches</h2></div><Button className="text-button">Match history <Icon name="arrow" size={16} /></Button></div>
-      <div className="result-card"><span className="result-badge win">WON</span><div className="result-copy"><strong>Northside CC <span>142/6</span></strong><p>Beat Riverside XI by 18 runs</p><small>4 Oct · Club match</small></div><Icon name="chevron" /></div>
-      <div className="result-card"><span className="result-badge loss">LOST</span><div className="result-copy"><strong>Weekend Kings <span>108/9</span></strong><p>Lost to Hillview by 3 wickets</p><small>28 Sep · Club match</small></div><Icon name="chevron" /></div>
-    </section>
-  </div>;
+    </>
+  );
 }
 
 function Clubs({ onStart }: { onStart: (club: Club) => void }) {
   const [view, setView] = useState<"list" | "create" | "detail">("list");
-  const [listMode, setListMode] = useState<"mine" | "browse">("mine");
   const [myClubs, setMyClubs] = useState<Club[]>([]);
-  const [browseClubs, setBrowseClubs] = useState<Club[]>([]);
   const [selectedClub, setSelectedClub] = useState<Club | null>(null);
-  const [detailTab, setDetailTab] = useState<"overview" | "roster" | "matches" | "stats">("overview");
+  const [detailTab, setDetailTab] = useState<
+    "overview" | "roster" | "matches" | "stats"
+  >("overview");
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -370,7 +649,13 @@ function Clubs({ onStart }: { onStart: (club: Club) => void }) {
   const [playerName, setPlayerName] = useState("");
   const [playerNickname, setPlayerNickname] = useState("");
   const [playerRole, setPlayerRole] = useState("all-rounder");
-  const [playerStatus, setPlayerStatus] = useState<"active" | "archived">("active");
+  const [playerStatus, setPlayerStatus] = useState<"active" | "archived">(
+    "active",
+  );
+  const [inviting, setInviting] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] =
+    useState<ClubInvitation["role"]>("member");
 
   useEffect(() => {
     let active = true;
@@ -378,11 +663,12 @@ function Clubs({ onStart }: { onStart: (club: Club) => void }) {
       .then((result) => {
         if (!active) return;
         setMyClubs(result.myClubs);
-        setBrowseClubs(result.browseClubs);
       })
       .catch((reason) => active && setError(reason.message))
       .finally(() => active && setLoading(false));
-    return () => { active = false; };
+    return () => {
+      active = false;
+    };
   }, []);
 
   async function openClub(club: Club) {
@@ -393,7 +679,9 @@ function Clubs({ onStart }: { onStart: (club: Club) => void }) {
     try {
       setSelectedClub(await getClub(club.id));
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Unable to load club");
+      setError(
+        reason instanceof Error ? reason.message : "Unable to load club",
+      );
     }
   }
 
@@ -408,13 +696,14 @@ function Clubs({ onStart }: { onStart: (club: Club) => void }) {
     try {
       const club = await createClub({ name: clubName, location: clubLocation });
       setMyClubs((current) => [club, ...current]);
-      setBrowseClubs((current) => [club, ...current]);
       setSelectedClub(club);
       setView("detail");
       setClubName("");
       setClubLocation("");
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Unable to create club");
+      setError(
+        reason instanceof Error ? reason.message : "Unable to create club",
+      );
     } finally {
       setSaving(false);
     }
@@ -427,10 +716,21 @@ function Clubs({ onStart }: { onStart: (club: Club) => void }) {
     setError("");
     try {
       const club = editingPlayer
-        ? await updateClubPlayer(selectedClub.id, editingPlayer.id, { name: playerName, nickname: playerNickname, role: playerRole, status: playerStatus })
-        : await addClubPlayer(selectedClub.id, { name: playerName, nickname: playerNickname, role: playerRole });
+        ? await updateClubPlayer(selectedClub.id, editingPlayer.id, {
+            name: playerName,
+            nickname: playerNickname,
+            role: playerRole,
+            status: playerStatus,
+          })
+        : await addClubPlayer(selectedClub.id, {
+            name: playerName,
+            nickname: playerNickname,
+            role: playerRole,
+          });
       setSelectedClub(club);
-      setMyClubs((current) => current.map((item) => item.id === club.id ? club : item));
+      setMyClubs((current) =>
+        current.map((item) => (item.id === club.id ? club : item)),
+      );
       setPlayerName("");
       setPlayerNickname("");
       setPlayerRole("all-rounder");
@@ -438,7 +738,9 @@ function Clubs({ onStart }: { onStart: (club: Club) => void }) {
       setEditingPlayer(null);
       setAddingPlayer(false);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Unable to add player");
+      setError(
+        reason instanceof Error ? reason.message : "Unable to add player",
+      );
     } finally {
       setSaving(false);
     }
@@ -479,13 +781,19 @@ function Clubs({ onStart }: { onStart: (club: Club) => void }) {
     setSaving(true);
     setError("");
     try {
-      const club = await updateClub(selectedClub.id, { name: editName, location: editLocation });
+      const club = await updateClub(selectedClub.id, {
+        name: editName,
+        location: editLocation,
+      });
       setSelectedClub(club);
-      setMyClubs((current) => current.map((item) => item.id === club.id ? club : item));
-      setBrowseClubs((current) => current.map((item) => item.id === club.id ? { ...club, players: [] } : item));
+      setMyClubs((current) =>
+        current.map((item) => (item.id === club.id ? club : item)),
+      );
       setEditingClub(false);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Unable to update club");
+      setError(
+        reason instanceof Error ? reason.message : "Unable to update club",
+      );
     } finally {
       setSaving(false);
     }
@@ -497,113 +805,821 @@ function Clubs({ onStart }: { onStart: (club: Club) => void }) {
     setError("");
     try {
       await deleteClub(selectedClub.id);
-      setMyClubs((current) => current.filter((item) => item.id !== selectedClub.id));
-      setBrowseClubs((current) => current.filter((item) => item.id !== selectedClub.id));
+      setMyClubs((current) =>
+        current.filter((item) => item.id !== selectedClub.id),
+      );
       setEditingClub(false);
       setSelectedClub(null);
       setView("list");
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Unable to delete club");
+      setError(
+        reason instanceof Error ? reason.message : "Unable to delete club",
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function submitInvitation(event: React.FormEvent) {
+    event.preventDefault();
+    if (!selectedClub || !inviteEmail.trim()) return;
+    setSaving(true);
+    setError("");
+    try {
+      await inviteClubMember(selectedClub.id, inviteEmail.trim(), inviteRole);
+      setInviteEmail("");
+      setInviteRole("member");
+      setInviting(false);
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : "Unable to send invitation",
+      );
     } finally {
       setSaving(false);
     }
   }
 
   if (view === "create") {
-    const previewInitials = clubName.trim() ? clubName.trim().split(/\s+/).slice(0, 2).map((word) => word[0]).join("").toUpperCase() : "CC";
-    return <div className="page club-flow-page">
-      <Button className="flow-back" onClick={() => { setView("list"); setError(""); }}><Icon name="back" /> Back to clubs</Button>
-      <section className="club-flow-head"><span className="eyebrow">NEW CLUB</span><h1>Build your club home</h1><p>Create a shared place for your roster, matches and season records.</p></section>
-      <div className="create-club-preview"><Avatar initials={previewInitials} tone="green" /><div><span>YOUR NEW CLUB</span><strong>{clubName.trim() || "Club name"}</strong><small><Icon name="pin" size={13} /> {clubLocation.trim() || "Add a home ground or location"}</small></div></div>
-      <form className="club-form" onSubmit={submitClub}>
-        <label><span>Club name <i>Required</i></span><input value={clubName} maxLength={80} onChange={(event) => setClubName(event.target.value)} placeholder="e.g. Northside Cricket Club" autoFocus /></label>
-        <label><span>Location <i>Optional</i></span><input value={clubLocation} maxLength={120} onChange={(event) => setClubLocation(event.target.value)} placeholder="Home ground, town or city" /></label>
-        <div className="form-note"><Icon name="shield" /><p><strong>You’ll be the club admin.</strong><span>You can invite members, manage the roster and appoint organizers later.</span></p></div>
-        {error && <div className="club-error">{error}</div>}
-        <button className="club-submit" type="submit" disabled={saving}>{saving ? "Creating club…" : "Create club"} {!saving && <span>→</span>}</button>
-      </form>
-    </div>;
+    const previewInitials = clubName.trim()
+      ? clubName
+          .trim()
+          .split(/\s+/)
+          .slice(0, 2)
+          .map((word) => word[0])
+          .join("")
+          .toUpperCase()
+      : "CC";
+    return (
+      <>
+        <PageHeader
+          title="Create club"
+          eyebrow="CLUBS"
+          onBack={() => {
+            setView("list");
+            setError("");
+          }}
+          backLabel="Back to clubs"
+        />
+        <div className="page club-flow-page">
+          <section className="club-flow-head">
+            <h2>Build your club home</h2>
+            <p>
+              Create a shared place for your roster, matches and season records.
+            </p>
+          </section>
+          <div className="create-club-preview">
+            <Avatar initials={previewInitials} tone="green" />
+            <div>
+              <span>YOUR NEW CLUB</span>
+              <strong>{clubName.trim() || "Club name"}</strong>
+              <small>
+                <Icon name="pin" size={13} />{" "}
+                {clubLocation.trim() || "Add a home ground or location"}
+              </small>
+            </div>
+          </div>
+          <form className="club-form" onSubmit={submitClub}>
+            <label>
+              <span>
+                Club name <i>Required</i>
+              </span>
+              <input
+                value={clubName}
+                maxLength={80}
+                onChange={(event) => setClubName(event.target.value)}
+                placeholder="e.g. Northside Cricket Club"
+                autoFocus
+              />
+            </label>
+            <label>
+              <span>
+                Location <i>Optional</i>
+              </span>
+              <input
+                value={clubLocation}
+                maxLength={120}
+                onChange={(event) => setClubLocation(event.target.value)}
+                placeholder="Home ground, town or city"
+              />
+            </label>
+            <div className="form-note">
+              <Icon name="shield" />
+              <p>
+                <strong>You’ll be the club admin.</strong>
+                <span>
+                  You can invite members, manage the roster and appoint
+                  organizers later.
+                </span>
+              </p>
+            </div>
+            {error && <div className="club-error">{error}</div>}
+            <button className="club-submit" type="submit" disabled={saving}>
+              {saving ? "Creating club…" : "Create club"}{" "}
+              {!saving && <span>→</span>}
+            </button>
+          </form>
+        </div>
+      </>
+    );
   }
 
   if (view === "detail" && selectedClub) {
-    const canEdit = selectedClub.membership?.role === "admin" || selectedClub.membership?.role === "organizer";
-    return <div className="page club-detail-page">
-      <div className="detail-actions"><Button className="flow-back" onClick={() => { setView("list"); setError(""); }}><Icon name="back" /> All clubs</Button>{selectedClub.membership?.role === "admin" && <Button className="icon-button" onClick={openClubSettings} ariaLabel="Club settings"><Icon name="settings" /></Button>}</div>
-      <section className="club-detail-hero">
-        <div className="club-detail-title"><Avatar initials={selectedClub.initials} tone="green" /><div><span className="eyebrow light">{selectedClub.membership?.role?.toUpperCase() || "PUBLIC CLUB"}</span><h1>{selectedClub.name}</h1><p><Icon name="pin" size={14} /> {selectedClub.location || "Location not added"}</p></div></div>
-        <div className="club-metrics"><div><strong>{selectedClub.players.length}</strong><span>PLAYERS</span></div><div><strong>{selectedClub.matchCount}</strong><span>MATCHES</span></div><div><strong>{selectedClub.record.wins}–{selectedClub.record.losses}</strong><span>RECORD</span></div></div>
-        {selectedClub.joined && <Button className="primary-button light-button wide" onClick={() => onStart(selectedClub)}><Icon name="play" /> Start club match</Button>}
-      </section>
-      <div className="club-tabs">
-        {(["overview", "roster", "matches", "stats"] as const).map((tab) => <Button key={tab} className={detailTab === tab ? "active" : ""} onClick={() => setDetailTab(tab)}>{tab === "roster" ? "Players" : tab}</Button>)}
-      </div>
-      {error && <div className="club-error detail-error">{error}</div>}
+    const canEdit =
+      selectedClub.membership?.role === "admin" ||
+      selectedClub.membership?.role === "organizer";
+    return (
+      <>
+        <PageHeader
+          title={selectedClub.name}
+          eyebrow="CLUB"
+          onBack={() => {
+            setView("list");
+            setError("");
+          }}
+          backLabel="Back to all clubs"
+          action={
+            selectedClub.membership?.role === "admin" ? (
+              <Button
+                className="icon-button club-settings-button"
+                onClick={openClubSettings}
+                ariaLabel="Club settings"
+              >
+                <Icon name="settings" />
+              </Button>
+            ) : undefined
+          }
+        />
+        <div className="page club-detail-page">
+          <section className="club-detail-hero">
+            <div className="club-detail-title">
+              <Avatar initials={selectedClub.initials} tone="green" />
+              <div>
+                <span className="eyebrow light">
+                  {selectedClub.membership?.role?.toUpperCase() ||
+                    "PUBLIC CLUB"}
+                </span>
+                <h2>{selectedClub.name}</h2>
+                <p>
+                  <Icon name="pin" size={14} />{" "}
+                  {selectedClub.location || "Location not added"}
+                </p>
+              </div>
+            </div>
+            <div className="club-metrics">
+              <div>
+                <strong>{selectedClub.players.length}</strong>
+                <span>PLAYERS</span>
+              </div>
+              <div>
+                <strong>{selectedClub.matchCount}</strong>
+                <span>MATCHES</span>
+              </div>
+              <div>
+                <strong>
+                  {selectedClub.record.wins}–{selectedClub.record.losses}
+                </strong>
+                <span>RECORD</span>
+              </div>
+            </div>
+            {selectedClub.joined && (
+              <Button
+                className="primary-button light-button wide"
+                onClick={() => onStart(selectedClub)}
+              >
+                <Icon name="play" /> Start club match
+              </Button>
+            )}
+          </section>
+          <div className="club-tabs">
+            {(["overview", "roster", "matches", "stats"] as const).map(
+              (tab) => (
+                <Button
+                  key={tab}
+                  className={detailTab === tab ? "active" : ""}
+                  onClick={() => setDetailTab(tab)}
+                >
+                  {tab === "roster" ? "Players" : tab}
+                </Button>
+              ),
+            )}
+          </div>
+          {error && <div className="club-error detail-error">{error}</div>}
 
-      {detailTab === "overview" && <div className="club-tab-content">
-        <section className="detail-section"><div className="section-heading"><div><span className="eyebrow">CLUB SNAPSHOT</span><h2>This season</h2></div></div>
-          <div className="snapshot-grid"><div><span className="snapshot-icon green"><Icon name="users" /></span><strong>{selectedClub.players.length}</strong><small>Active players</small></div><div><span className="snapshot-icon cream"><Icon name="matches" /></span><strong>{selectedClub.matchCount}</strong><small>Matches played</small></div></div>
-        </section>
-        <section className="detail-section"><span className="eyebrow">RECENT ACTIVITY</span><div className="club-empty-inline"><span className="empty-ball" /><div><strong>Your club story starts here</strong><p>Add players and score your first club match.</p></div></div></section>
-        {canEdit && <section className="admin-card"><span className="setting-icon"><Icon name="shield" /></span><div><strong>Club admin tools</strong><p>Manage members, invitations and club settings.</p></div><Icon name="chevron" /></section>}
-      </div>}
+          {detailTab === "overview" && (
+            <div className="club-tab-content">
+              <section className="detail-section">
+                <div className="section-heading">
+                  <div>
+                    <span className="eyebrow">CLUB SNAPSHOT</span>
+                    <h2>This season</h2>
+                  </div>
+                </div>
+                <div className="snapshot-grid">
+                  <div>
+                    <span className="snapshot-icon green">
+                      <Icon name="users" />
+                    </span>
+                    <strong>{selectedClub.players.length}</strong>
+                    <small>Active players</small>
+                  </div>
+                  <div>
+                    <span className="snapshot-icon cream">
+                      <Icon name="matches" />
+                    </span>
+                    <strong>{selectedClub.matchCount}</strong>
+                    <small>Matches played</small>
+                  </div>
+                </div>
+              </section>
+              <section className="detail-section">
+                <span className="eyebrow">RECENT ACTIVITY</span>
+                {selectedClub.recentMatches?.length ? (
+                  <div className="club-history-list">
+                    {selectedClub.recentMatches.slice(0, 3).map((match) => (
+                      <div key={match.id}>
+                        <strong>
+                          {match.teams[0].name} vs {match.teams[1].name}
+                        </strong>
+                        <span>{match.score?.result || "Match abandoned"}</span>
+                        <small>
+                          {match.mode === "club-internal"
+                            ? "Internal"
+                            : "External"}
+                        </small>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="club-empty-inline">
+                    <span className="empty-ball" />
+                    <div>
+                      <strong>Your club story starts here</strong>
+                      <p>Add players and score your first club match.</p>
+                    </div>
+                  </div>
+                )}
+              </section>
+              {canEdit && (
+                <button
+                  type="button"
+                  className="admin-card"
+                  onClick={() => {
+                    setError("");
+                    setInviting(true);
+                  }}
+                >
+                  <span className="setting-icon">
+                    <Icon name="shield" />
+                  </span>
+                  <div>
+                    <strong>Invite a club member</strong>
+                    <p>Add organizers, scorers and members by email.</p>
+                  </div>
+                  <Icon name="chevron" />
+                </button>
+              )}
+            </div>
+          )}
 
-      {detailTab === "roster" && <div className="club-tab-content">
-        <div className="section-heading"><div><h2>{selectedClub.players.length} players</h2></div>{canEdit && <Button className="text-button" onClick={openAddPlayer}><Icon name="plus" /> Add player</Button>}</div>
-        {selectedClub.players.length === 0 ? <div className="full-empty"><span className="empty-illustration"><Icon name="users" size={29} /></span><h3>No players yet</h3><p>Add your regular players now. They don’t need CricApp accounts.</p>{canEdit && <Button className="primary-button light-button" onClick={openAddPlayer}><Icon name="plus" /> Add first player</Button>}</div> :
-          <div className="detail-roster">{selectedClub.players.map((player, index) => <div className={`detail-player ${player.status === "archived" ? "archived-player" : ""}`} key={player.id}><span className="player-number">{String(index + 1).padStart(2, "0")}</span><Avatar initials={getInitials(player.name)} tone="cream" /><div><strong>{player.name}</strong><small>{player.nickname ? `${player.nickname} · ` : ""}{player.role ? player.role.replace("-", " ") : "Player"}{player.status === "archived" ? " · Archived" : ""}</small></div>{canEdit ? <Button className="edit-player-button" onClick={() => openEditPlayer(player)} ariaLabel={`Edit ${player.name}`}><Icon name="settings" size={17} /></Button> : <span className="available-dot" />}</div>)}</div>}
-      </div>}
+          {detailTab === "roster" && (
+            <div className="club-tab-content">
+              <div className="section-heading">
+                <div>
+                  <h2>{selectedClub.players.length} players</h2>
+                </div>
+                {canEdit && (
+                  <Button className="text-button" onClick={openAddPlayer}>
+                    <Icon name="plus" /> Add player
+                  </Button>
+                )}
+              </div>
+              {selectedClub.players.length === 0 ? (
+                <div className="full-empty">
+                  <span className="empty-illustration">
+                    <Icon name="users" size={29} />
+                  </span>
+                  <h3>No players yet</h3>
+                  <p>
+                    Add your regular players now. They don’t need CricApp
+                    accounts.
+                  </p>
+                  {canEdit && (
+                    <Button
+                      className="primary-button light-button"
+                      onClick={openAddPlayer}
+                    >
+                      <Icon name="plus" /> Add first player
+                    </Button>
+                  )}
+                </div>
+              ) : (
+                <div className="detail-roster">
+                  {selectedClub.players.map((player, index) => (
+                    <div
+                      className={`detail-player ${player.status === "archived" ? "archived-player" : ""}`}
+                      key={player.id}
+                    >
+                      <span className="player-number">
+                        {String(index + 1).padStart(2, "0")}
+                      </span>
+                      <Avatar
+                        initials={getInitials(player.name)}
+                        tone="cream"
+                      />
+                      <div>
+                        <strong>{player.name}</strong>
+                        <small>
+                          {player.nickname ? `${player.nickname} · ` : ""}
+                          {player.role
+                            ? player.role.replace("-", " ")
+                            : "Player"}
+                          {player.status === "archived" ? " · Archived" : ""}
+                        </small>
+                      </div>
+                      {canEdit ? (
+                        <Button
+                          className="edit-player-button"
+                          onClick={() => openEditPlayer(player)}
+                          ariaLabel={`Edit ${player.name}`}
+                        >
+                          <Icon name="edit" size={18} />
+                        </Button>
+                      ) : (
+                        <span className="available-dot" />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
-      {detailTab === "matches" && <div className="club-tab-content"><div className="full-empty"><span className="empty-illustration"><Icon name="matches" size={29} /></span><h3>No matches yet</h3><p>Club matches and completed scorecards will appear here.</p>{selectedClub.joined && <Button className="primary-button light-button" onClick={() => onStart(selectedClub)}><Icon name="play" /> Start first match</Button>}</div></div>}
-      {detailTab === "stats" && <div className="club-tab-content"><div className="full-empty"><span className="empty-illustration"><Icon name="bolt" size={29} /></span><h3>Stats are warming up</h3><p>Complete a club match to unlock batting and bowling leaders.</p></div></div>}
+          {detailTab === "matches" && (
+            <div className="club-tab-content">
+              {selectedClub.recentMatches?.length ? (
+                <>
+                  <div className="club-record-summary">
+                    <div>
+                      <strong>{selectedClub.internalMatchCount || 0}</strong>
+                      <span>INTERNAL</span>
+                    </div>
+                    <div>
+                      <strong>{selectedClub.externalMatchCount || 0}</strong>
+                      <span>EXTERNAL</span>
+                    </div>
+                    <div>
+                      <strong>{selectedClub.abandonedCount || 0}</strong>
+                      <span>ABANDONED</span>
+                    </div>
+                  </div>
+                  <div className="club-history-list">
+                    {selectedClub.recentMatches.map((match) => (
+                      <div key={match.id}>
+                        <strong>
+                          {match.teams[0].name} vs {match.teams[1].name}
+                        </strong>
+                        <span>{match.score?.result || "Match abandoned"}</span>
+                        <small>
+                          {new Date(
+                            match.completedAt ||
+                              match.updatedAt ||
+                              match.createdAt,
+                          ).toLocaleDateString()}
+                        </small>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <div className="full-empty">
+                  <span className="empty-illustration">
+                    <Icon name="matches" size={29} />
+                  </span>
+                  <h3>No matches yet</h3>
+                  <p>Club matches and completed scorecards will appear here.</p>
+                  {selectedClub.joined && (
+                    <Button
+                      className="primary-button light-button"
+                      onClick={() => onStart(selectedClub)}
+                    >
+                      <Icon name="play" /> Start first match
+                    </Button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+          {detailTab === "stats" && (
+            <div className="club-tab-content">
+              {selectedClub.playerStats?.some(
+                (stats) => stats.appearances > 0,
+              ) ? (
+                <>
+                  <p className="stats-policy">
+                    Finalized club matches only. Quick and abandoned match
+                    figures are excluded.
+                  </p>
+                  <div className="player-stats-list">
+                    {selectedClub.playerStats
+                      .filter((stats) => stats.appearances > 0)
+                      .sort((a, b) => b.runs - a.runs)
+                      .map((stats) => {
+                        const player = selectedClub.players.find(
+                          (item) => item.id === stats.playerId,
+                        );
+                        const strikeRate = stats.balls
+                          ? ((stats.runs * 100) / stats.balls).toFixed(1)
+                          : "—";
+                        const economy = stats.oversEquivalent
+                          ? (
+                              stats.runsConceded / stats.oversEquivalent
+                            ).toFixed(2)
+                          : "—";
+                        return (
+                          <div key={stats.playerId}>
+                            <strong>{player?.name || "Archived player"}</strong>
+                            <span>
+                              {stats.runs} runs · HS {stats.highest} · SR{" "}
+                              {strikeRate}
+                            </span>
+                            <small>
+                              {stats.wickets} wickets · Econ {economy} ·{" "}
+                              {stats.appearances} matches
+                            </small>
+                          </div>
+                        );
+                      })}
+                  </div>
+                </>
+              ) : (
+                <div className="full-empty">
+                  <span className="empty-illustration">
+                    <Icon name="bolt" size={29} />
+                  </span>
+                  <h3>Stats are warming up</h3>
+                  <p>
+                    Complete a club match to unlock batting and bowling leaders.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
 
-      {addingPlayer && <div className="sheet-backdrop" onMouseDown={() => setAddingPlayer(false)}><form className="player-sheet" onSubmit={submitPlayer} onMouseDown={(event) => event.stopPropagation()}><div className="sheet-handle" /><div className="sheet-title"><div><span className="eyebrow">PLAYERS</span><h2>{editingPlayer ? "Update player" : "Add a player"}</h2></div><Button className="sheet-close" onClick={() => { setAddingPlayer(false); setEditingPlayer(null); }}>×</Button></div>
-        <label><span>Player name</span><input value={playerName} onChange={(event) => setPlayerName(event.target.value)} placeholder="Full name" autoFocus /></label>
-        <label><span>Nickname <i>Optional</i></span><input value={playerNickname} onChange={(event) => setPlayerNickname(event.target.value)} placeholder="What the team calls them" /></label>
-        <label><span>Playing role</span><select value={playerRole} onChange={(event) => setPlayerRole(event.target.value)}><option value="batter">Batter</option><option value="bowler">Bowler</option><option value="all-rounder">All-rounder</option><option value="wicketkeeper">Wicketkeeper</option></select></label>
-        {editingPlayer && <label><span>Player status</span><select value={playerStatus} onChange={(event) => setPlayerStatus(event.target.value as "active" | "archived")}><option value="active">Active</option><option value="archived">Archived</option></select></label>}
-        {error && <div className="club-error">{error}</div>}
-        <button className="club-submit" type="submit" disabled={saving || !playerName.trim()}>{saving ? "Saving player…" : editingPlayer ? "Save player changes" : "Add player"} {!saving && <span>→</span>}</button>
-      </form></div>}
-      {editingClub && <div className="sheet-backdrop settings-backdrop" onMouseDown={() => setEditingClub(false)}><div className="player-sheet club-settings-sheet" onMouseDown={(event) => event.stopPropagation()}><div className="sheet-handle" /><div className="sheet-title"><div><span className="eyebrow">CLUB ADMIN</span><h2>Club settings</h2></div><Button className="sheet-close" onClick={() => setEditingClub(false)}>×</Button></div>
-        <form className="settings-form" onSubmit={submitClubUpdate}>
-          <label><span>Club name</span><input value={editName} maxLength={80} onChange={(event) => setEditName(event.target.value)} /></label>
-          <label><span>Location <i>Optional</i></span><input value={editLocation} maxLength={120} onChange={(event) => setEditLocation(event.target.value)} placeholder="Home ground, town or city" /></label>
-          {error && <div className="club-error">{error}</div>}
-          <button className="club-submit" type="submit" disabled={saving || !editName.trim()}>{saving ? "Saving changes…" : "Save changes"} {!saving && <span>→</span>}</button>
-        </form>
-        <section className="danger-zone"><span className="eyebrow">DANGER ZONE</span><h3>Delete this club</h3><p>This permanently removes the club and its roster. Clubs with match history are protected from deletion.</p>
-          <label><span>Type <strong>{selectedClub.name}</strong> to confirm</span><input value={deleteConfirm} onChange={(event) => setDeleteConfirm(event.target.value)} placeholder={selectedClub.name} /></label>
-          <Button className="delete-club-button" onClick={confirmClubDeletion} disabled={saving || deleteConfirm !== selectedClub.name}>{saving ? "Deleting…" : "Delete club permanently"}</Button>
-        </section>
-      </div></div>}
-    </div>;
+          {inviting && (
+            <div
+              className="sheet-backdrop"
+              onMouseDown={() => setInviting(false)}
+            >
+              <form
+                className="player-sheet"
+                onSubmit={submitInvitation}
+                onMouseDown={(event) => event.stopPropagation()}
+              >
+                <div className="sheet-handle" />
+                <div className="sheet-title">
+                  <div>
+                    <span className="eyebrow">MEMBERS</span>
+                    <h2>Invite to {selectedClub.name}</h2>
+                  </div>
+                  <Button
+                    className="sheet-close"
+                    onClick={() => setInviting(false)}
+                  >
+                    ×
+                  </Button>
+                </div>
+                <label>
+                  <span>Email address</span>
+                  <input
+                    type="email"
+                    value={inviteEmail}
+                    onChange={(event) => setInviteEmail(event.target.value)}
+                    placeholder="player@example.com"
+                    autoFocus
+                  />
+                </label>
+                <label>
+                  <span>Club role</span>
+                  <select
+                    value={inviteRole}
+                    onChange={(event) =>
+                      setInviteRole(
+                        event.target.value as ClubInvitation["role"],
+                      )
+                    }
+                  >
+                    <option value="member">Member</option>
+                    <option value="scorer">Scorer</option>
+                    <option value="organizer">Organizer</option>
+                  </select>
+                </label>
+                {error && <div className="club-error">{error}</div>}
+                <button
+                  className="club-submit"
+                  type="submit"
+                  disabled={saving || !inviteEmail.trim()}
+                >
+                  {saving ? "Sending…" : "Send invitation"}
+                </button>
+              </form>
+            </div>
+          )}
+
+          {addingPlayer && (
+            <div
+              className="sheet-backdrop"
+              onMouseDown={() => setAddingPlayer(false)}
+            >
+              <form
+                className="player-sheet"
+                onSubmit={submitPlayer}
+                onMouseDown={(event) => event.stopPropagation()}
+              >
+                <div className="sheet-handle" />
+                <div className="sheet-title">
+                  <div>
+                    <span className="eyebrow">PLAYERS</span>
+                    <h2>{editingPlayer ? "Update player" : "Add a player"}</h2>
+                  </div>
+                  <Button
+                    className="sheet-close"
+                    onClick={() => {
+                      setAddingPlayer(false);
+                      setEditingPlayer(null);
+                    }}
+                  >
+                    ×
+                  </Button>
+                </div>
+                <label>
+                  <span>Player name</span>
+                  <input
+                    value={playerName}
+                    onChange={(event) => setPlayerName(event.target.value)}
+                    placeholder="Full name"
+                    autoFocus
+                  />
+                </label>
+                <label>
+                  <span>
+                    Nickname <i>Optional</i>
+                  </span>
+                  <input
+                    value={playerNickname}
+                    onChange={(event) => setPlayerNickname(event.target.value)}
+                    placeholder="What the team calls them"
+                  />
+                </label>
+                <label>
+                  <span>Playing role</span>
+                  <select
+                    value={playerRole}
+                    onChange={(event) => setPlayerRole(event.target.value)}
+                  >
+                    <option value="batter">Batter</option>
+                    <option value="bowler">Bowler</option>
+                    <option value="all-rounder">All-rounder</option>
+                    <option value="wicketkeeper">Wicketkeeper</option>
+                  </select>
+                </label>
+                {editingPlayer && (
+                  <label>
+                    <span>Player status</span>
+                    <select
+                      value={playerStatus}
+                      onChange={(event) =>
+                        setPlayerStatus(
+                          event.target.value as "active" | "archived",
+                        )
+                      }
+                    >
+                      <option value="active">Active</option>
+                      <option value="archived">Archived</option>
+                    </select>
+                  </label>
+                )}
+                {error && <div className="club-error">{error}</div>}
+                <button
+                  className="club-submit"
+                  type="submit"
+                  disabled={saving || !playerName.trim()}
+                >
+                  {saving
+                    ? "Saving player…"
+                    : editingPlayer
+                      ? "Save player changes"
+                      : "Add player"}{" "}
+                  {!saving && <span>→</span>}
+                </button>
+              </form>
+            </div>
+          )}
+          {editingClub && (
+            <div
+              className="sheet-backdrop settings-backdrop"
+              onMouseDown={() => setEditingClub(false)}
+            >
+              <div
+                className="player-sheet club-settings-sheet"
+                onMouseDown={(event) => event.stopPropagation()}
+              >
+                <div className="sheet-handle" />
+                <div className="sheet-title">
+                  <div>
+                    <span className="eyebrow">CLUB ADMIN</span>
+                    <h2>Club settings</h2>
+                  </div>
+                  <Button
+                    className="sheet-close"
+                    onClick={() => setEditingClub(false)}
+                  >
+                    ×
+                  </Button>
+                </div>
+                <form className="settings-form" onSubmit={submitClubUpdate}>
+                  <label>
+                    <span>Club name</span>
+                    <input
+                      value={editName}
+                      maxLength={80}
+                      onChange={(event) => setEditName(event.target.value)}
+                    />
+                  </label>
+                  <label>
+                    <span>
+                      Location <i>Optional</i>
+                    </span>
+                    <input
+                      value={editLocation}
+                      maxLength={120}
+                      onChange={(event) => setEditLocation(event.target.value)}
+                      placeholder="Home ground, town or city"
+                    />
+                  </label>
+                  {error && <div className="club-error">{error}</div>}
+                  <button
+                    className="club-submit"
+                    type="submit"
+                    disabled={saving || !editName.trim()}
+                  >
+                    {saving ? "Saving changes…" : "Save changes"}{" "}
+                    {!saving && <span>→</span>}
+                  </button>
+                </form>
+                <section className="danger-zone">
+                  <span className="eyebrow">DANGER ZONE</span>
+                  <h3>Delete this club</h3>
+                  <p>
+                    This permanently removes the club and its roster. Clubs with
+                    match history are protected from deletion.
+                  </p>
+                  <label>
+                    <span>
+                      Type <strong>{selectedClub.name}</strong> to confirm
+                    </span>
+                    <input
+                      value={deleteConfirm}
+                      onChange={(event) => setDeleteConfirm(event.target.value)}
+                      placeholder={selectedClub.name}
+                    />
+                  </label>
+                  <Button
+                    className="delete-club-button"
+                    onClick={confirmClubDeletion}
+                    disabled={saving || deleteConfirm !== selectedClub.name}
+                  >
+                    {saving ? "Deleting…" : "Delete club permanently"}
+                  </Button>
+                </section>
+              </div>
+            </div>
+          )}
+        </div>
+      </>
+    );
   }
 
-  const source = listMode === "mine" ? myClubs : browseClubs;
-  const filtered = source.filter((club) => `${club.name} ${club.location || ""}`.toLowerCase().includes(search.toLowerCase()));
-  return <div className="page clubs-page">
-    <section className="clubs-title-row"><div className="page-title"><span className="eyebrow">{myClubs.length} MEMBERSHIP{myClubs.length === 1 ? "" : "S"}</span><h1>Your clubs</h1><p>Manage rosters, matches and club records.</p></div><Button className="create-club-button" onClick={() => { setView("create"); setError(""); }}><Icon name="plus" /> Create</Button></section>
-    <div className="club-list-tabs"><Button className={listMode === "mine" ? "active" : ""} onClick={() => setListMode("mine")}>My Clubs <span>{myClubs.length}</span></Button><Button className={listMode === "browse" ? "active" : ""} onClick={() => setListMode("browse")}>Browse Clubs</Button></div>
-    <label className="club-search"><Icon name="search" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by club or location" /></label>
-    {error && <div className="club-error">{error}<Button onClick={() => window.location.reload()}>Retry</Button></div>}
-    {loading ? <div className="club-skeletons"><span /><span /><span /></div> :
-      filtered.length === 0 ? <div className="full-empty list-empty"><span className="empty-illustration"><Icon name={search ? "search" : "shield"} size={29} /></span><h3>{search ? "No clubs found" : listMode === "mine" ? "Create your first club" : "No clubs to browse yet"}</h3><p>{search ? "Try another club name or location." : listMode === "mine" ? "Bring your team, roster and match records together." : "New community clubs will appear here."}</p>{!search && listMode === "mine" && <Button className="primary-button light-button" onClick={() => setView("create")}><Icon name="plus" /> Create a club</Button>}</div> :
-      <div className="clubs-database-list">{filtered.map((club, index) => <Button className="database-club-card" key={club.id} onClick={() => openClub(club)}><Avatar initials={club.initials} tone={index % 2 ? "cream" : "dark"} /><span className="database-club-copy"><span className="club-card-label">{club.membership?.role || (club.joined ? "member" : "community club")}</span><strong>{club.name}</strong><small><Icon name="pin" size={13} /> {club.location || "Location not added"}</small><span className="club-card-meta"><b><Icon name="users" size={13} /> {club.players.length || club.memberCount} players</b><b>{club.matchCount} matches</b></span></span><Icon name="chevron" /></Button>)}</div>}
-  </div>;
+  const filtered = myClubs.filter((club) =>
+    `${club.name} ${club.location || ""}`
+      .toLowerCase()
+      .includes(search.toLowerCase()),
+  );
+  return (
+    <>
+      <PageHeader
+        title="Clubs"
+        eyebrow={`${myClubs.length} MEMBERSHIP${myClubs.length === 1 ? "" : "S"}`}
+        action={
+          <Button
+            className="create-club-button"
+            onClick={() => {
+              setView("create");
+              setError("");
+            }}
+          >
+            <Icon name="plus" /> Create
+          </Button>
+        }
+      />
+      <div className="page clubs-page">
+        <p className="page-intro">Manage palyers, matches and club records.</p>
+        <label className="club-search">
+          <Icon name="search" />
+          <input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search by club or location"
+          />
+        </label>
+        {error && (
+          <div className="club-error">
+            {error}
+            <Button onClick={() => window.location.reload()}>Retry</Button>
+          </div>
+        )}
+        {loading ? (
+          <div className="club-skeletons">
+            <span />
+            <span />
+            <span />
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="full-empty list-empty">
+            <span className="empty-illustration">
+              <Icon name={search ? "search" : "shield"} size={29} />
+            </span>
+            <h3>{search ? "No clubs found" : "Create your first club"}</h3>
+            <p>
+              {search
+                ? "Try another club name or location."
+                : "Bring your team, roster and match records together."}
+            </p>
+            {!search && (
+              <Button
+                className="primary-button light-button"
+                onClick={() => setView("create")}
+              >
+                <Icon name="plus" /> Create a club
+              </Button>
+            )}
+          </div>
+        ) : (
+          <div className="clubs-database-list">
+            {filtered.map((club, index) => (
+              <Button
+                className="database-club-card"
+                key={club.id}
+                onClick={() => openClub(club)}
+              >
+                <Avatar
+                  initials={club.initials}
+                  tone={index % 2 ? "cream" : "dark"}
+                />
+                <span className="database-club-copy">
+                  <span className="club-card-label">
+                    {club.membership?.role ||
+                      (club.joined ? "member" : "community club")}
+                  </span>
+                  <strong>{club.name}</strong>
+                  <small>
+                    <Icon name="pin" size={13} />{" "}
+                    {club.location || "Location not added"}
+                  </small>
+                  <span className="club-card-meta">
+                    <b>
+                      <Icon name="users" size={13} />{" "}
+                      {club.players.length || club.memberCount} players
+                    </b>
+                    <b>{club.matchCount} matches</b>
+                  </span>
+                </span>
+                <Icon name="chevron" />
+              </Button>
+            ))}
+          </div>
+        )}
+      </div>
+    </>
+  );
 }
 
 function Matches({
   onResume,
+  onPlayAgain,
   onCreateQuick,
   onCreateClub,
 }: {
   onResume: (match: CricketMatch) => void;
+  onPlayAgain: (match: CricketMatch) => void;
   onCreateQuick: () => void;
   onCreateClub: (club: Club) => void;
 }) {
   const [matches, setMatches] = useState<CricketMatch[]>([]);
   const [clubs, setClubs] = useState<Club[]>([]);
-  const [filter, setFilter] = useState<"all" | "ready" | "club" | "quick">("all");
+  const [filter, setFilter] = useState<
+    "all" | "active" | "completed" | "abandoned"
+  >("all");
+  const [selectedMatch, setSelectedMatch] = useState<CricketMatch | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [creating, setCreating] = useState(false);
@@ -616,15 +1632,26 @@ function Matches({
         setMatches(matchData);
         setClubs(clubData.myClubs);
       })
-      .catch((reason) => active && setError(reason instanceof Error ? reason.message : "Unable to load matches"))
+      .catch(
+        (reason) =>
+          active &&
+          setError(
+            reason instanceof Error ? reason.message : "Unable to load matches",
+          ),
+      )
       .finally(() => active && setLoading(false));
-    return () => { active = false; };
+    return () => {
+      active = false;
+    };
   }, []);
 
   const filteredMatches = matches.filter((match) => {
-    if (filter === "ready") return match.status === "ready";
-    if (filter === "quick") return match.mode === "quick";
-    if (filter === "club") return match.mode !== "quick";
+    if (filter === "active")
+      return ["ready", "live", "paused", "awaiting-second-innings"].includes(
+        match.status,
+      );
+    if (filter === "completed") return match.status === "completed";
+    if (filter === "abandoned") return match.status === "abandoned";
     return true;
   });
 
@@ -634,44 +1661,681 @@ function Matches({
     return "Quick match";
   }
 
-  return <div className="page matches-page">
-    <section className="matches-title-row"><div className="page-title"><span className="eyebrow">MATCH CENTRE</span><h1>Your matches</h1><p>Set up games, resume scoring and revisit scorecards.</p></div><Button className="create-club-button new-match-button" onClick={() => setCreating(true)}><Icon name="plus" /> New match</Button></section>
-    <div className="match-summary-strip"><div><strong>{matches.length}</strong><span>TOTAL</span></div><div><strong>{matches.filter((match) => match.status === "ready").length}</strong><span>READY</span></div><div><strong>{matches.filter((match) => match.mode !== "quick").length}</strong><span>CLUB</span></div></div>
-    <div className="filter-pills match-filters">
-      {(["all", "ready", "club", "quick"] as const).map((item) => <Button key={item} className={filter === item ? "active" : ""} onClick={() => setFilter(item)}>{item}</Button>)}
-    </div>
-    {error && <div className="club-error">{error}<Button onClick={() => window.location.reload()}>Retry</Button></div>}
-    {loading ? <div className="match-skeletons"><span /><span /><span /></div> :
-      filteredMatches.length === 0 ? <div className="full-empty matches-empty"><span className="empty-illustration"><Icon name="matches" size={29} /></span><h3>{matches.length ? "No matches in this view" : "Create your first match"}</h3><p>{matches.length ? "Choose another filter to see more matches." : "Set up a Quick Match or use an authorized club roster."}</p>{!matches.length && <Button className="primary-button light-button" onClick={() => setCreating(true)}><Icon name="plus" /> Create a match</Button>}</div> :
-      <div className="matches-database-list">{filteredMatches.map((match) => {
-        const created = new Date(match.createdAt);
-        return <Button className="database-match-card" key={match.id} onClick={() => onResume(match)}>
-          <div className="database-match-top"><span className={`match-status-badge ${match.status}`}>{match.status}</span><small>{created.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}</small></div>
-          <div className="database-versus"><div><Avatar initials={getInitials(match.teams[0].name)} tone="dark" /><strong>{match.teams[0].name}</strong></div><span>VS</span><div><Avatar initials={getInitials(match.teams[1].name)} tone="cream" /><strong>{match.teams[1].name}</strong></div></div>
-          <div className="database-match-footer"><span>{formatMatchType(match.mode)} · {match.rules.overs} overs</span><strong>Start scoring <Icon name="arrow" size={15} /></strong></div>
-        </Button>;
-      })}</div>}
+  async function removeMatch(match: CricketMatch) {
+    const name = `${match.teams[0].name} vs ${match.teams[1].name}`;
+    if (
+      !window.confirm(
+        `Remove ${name}? This permanently removes its scorecard and statistics.`,
+      )
+    )
+      return;
+    try {
+      await deleteMatch(match.id);
+      localStorage.removeItem(`cricapp-match-score:${match.id}`);
+      setMatches((current) => current.filter((item) => item.id !== match.id));
+      setSelectedMatch(null);
+    } catch (reason) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Unable to remove this match",
+      );
+    }
+  }
 
-    {creating && <div className="sheet-backdrop" onMouseDown={() => setCreating(false)}><div className="player-sheet match-create-sheet" onMouseDown={(event) => event.stopPropagation()}><div className="sheet-handle" /><div className="sheet-title"><div><span className="eyebrow">NEW MATCH</span><h2>How are you playing?</h2></div><Button className="sheet-close" onClick={() => setCreating(false)}>×</Button></div>
-      <button type="button" className="match-launch-card quick-launch" onClick={onCreateQuick}><span className="launch-icon"><Icon name="bolt" /></span><span><strong>Quick scoring</strong><small>Create two independent teams</small></span><Icon name="arrow" /></button>
-      <div className="launch-divider"><span>OR USE A CLUB</span></div>
-      {clubs.length === 0 ? <div className="setup-empty"><strong>No authorized clubs</strong><p>Create a club or ask an admin for organizer access.</p></div> :
-        <div className="match-club-options">{clubs.map((club) => <button type="button" key={club.id} className="match-launch-card" onClick={() => onCreateClub(club)}><Avatar initials={club.initials} tone="green" /><span><strong>{club.name}</strong><small>Internal or external club match</small></span><Icon name="arrow" /></button>)}</div>}
-    </div></div>}
-  </div>;
+  if (selectedMatch)
+    return (
+      <MatchScorecard
+        match={selectedMatch}
+        onBack={() => setSelectedMatch(null)}
+        onPlayAgain={() => onPlayAgain(selectedMatch)}
+        onRemove={() => removeMatch(selectedMatch)}
+      />
+    );
+
+  return (
+    <>
+      <PageHeader
+        title="Matches"
+        eyebrow="MATCH CENTRE"
+        action={
+          <Button
+            className="create-club-button new-match-button"
+            onClick={() => setCreating(true)}
+          >
+            <Icon name="plus" /> New match
+          </Button>
+        }
+      />
+      <div className="page matches-page">
+        <p className="page-intro">
+          Set up games, resume scoring and revisit scorecards.
+        </p>
+        <div className="match-summary-strip">
+          <div>
+            <strong>{matches.length}</strong>
+            <span>TOTAL</span>
+          </div>
+          <div>
+            <strong>
+              {
+                matches.filter((match) =>
+                  [
+                    "ready",
+                    "live",
+                    "paused",
+                    "awaiting-second-innings",
+                  ].includes(match.status),
+                ).length
+              }
+            </strong>
+            <span>ACTIVE</span>
+          </div>
+          <div>
+            <strong>
+              {matches.filter((match) => match.status === "completed").length}
+            </strong>
+            <span>COMPLETE</span>
+          </div>
+        </div>
+        <div className="filter-pills match-filters">
+          {(["all", "active", "completed", "abandoned"] as const).map(
+            (item) => (
+              <Button
+                key={item}
+                className={filter === item ? "active" : ""}
+                onClick={() => setFilter(item)}
+              >
+                {item}
+              </Button>
+            ),
+          )}
+        </div>
+        {error && (
+          <div className="club-error">
+            {error}
+            <Button onClick={() => window.location.reload()}>Retry</Button>
+          </div>
+        )}
+        {loading ? (
+          <div className="match-skeletons">
+            <span />
+            <span />
+            <span />
+          </div>
+        ) : filteredMatches.length === 0 ? (
+          <div className="full-empty matches-empty">
+            <span className="empty-illustration">
+              <Icon name="matches" size={29} />
+            </span>
+            <h3>
+              {matches.length
+                ? "No matches in this view"
+                : "Create your first match"}
+            </h3>
+            <p>
+              {matches.length
+                ? "Choose another filter to see more matches."
+                : "Set up a Quick Match or use an authorized club roster."}
+            </p>
+            {!matches.length && (
+              <Button
+                className="primary-button light-button"
+                onClick={() => setCreating(true)}
+              >
+                <Icon name="plus" /> Create a match
+              </Button>
+            )}
+          </div>
+        ) : (
+          <div className="matches-database-list">
+            {filteredMatches.map((match) => {
+              const created = new Date(match.createdAt);
+              const canResume = !["completed", "abandoned"].includes(
+                match.status,
+              );
+              return (
+                <div className="database-match-item" key={match.id}>
+                  <Button
+                    className="database-match-card"
+                    onClick={() =>
+                      canResume ? onResume(match) : setSelectedMatch(match)
+                    }
+                  >
+                    <div className="database-match-top">
+                      <span className={`match-status-badge ${match.status}`}>
+                        {match.status}
+                      </span>
+                      <small>
+                        {created.toLocaleDateString(undefined, {
+                          day: "numeric",
+                          month: "short",
+                          year: "numeric",
+                        })}
+                      </small>
+                    </div>
+                    <div className="database-versus">
+                      <div>
+                        <Avatar
+                          initials={getInitials(match.teams[0].name)}
+                          tone="dark"
+                        />
+                        <strong>{match.teams[0].name}</strong>
+                      </div>
+                      <span>VS</span>
+                      <div>
+                        <Avatar
+                          initials={getInitials(match.teams[1].name)}
+                          tone="cream"
+                        />
+                        <strong>{match.teams[1].name}</strong>
+                      </div>
+                    </div>
+                    <div className="database-match-footer">
+                      <span>
+                        {formatMatchType(match.mode)} · {match.rules.overs}{" "}
+                        overs
+                      </span>
+                      <strong>
+                        {canResume
+                          ? match.status === "ready"
+                            ? "Start scoring"
+                            : "Resume scoring"
+                          : "View scorecard"}{" "}
+                        <Icon name="arrow" size={15} />
+                      </strong>
+                    </div>
+                  </Button>
+                  <button
+                    type="button"
+                    className="remove-match-card"
+                    onClick={() => removeMatch(match)}
+                  >
+                    Remove
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {creating && (
+          <div
+            className="sheet-backdrop"
+            onMouseDown={() => setCreating(false)}
+          >
+            <div
+              className="player-sheet match-create-sheet"
+              onMouseDown={(event) => event.stopPropagation()}
+            >
+              <div className="sheet-handle" />
+              <div className="sheet-title">
+                <div>
+                  <span className="eyebrow">NEW MATCH</span>
+                  <h2>How are you playing?</h2>
+                </div>
+                <Button
+                  className="sheet-close"
+                  onClick={() => setCreating(false)}
+                >
+                  ×
+                </Button>
+              </div>
+              <button
+                type="button"
+                className="match-launch-card quick-launch"
+                onClick={onCreateQuick}
+              >
+                <span className="launch-icon">
+                  <Icon name="bolt" />
+                </span>
+                <span>
+                  <strong>Quick scoring</strong>
+                  <small>Create two independent teams</small>
+                </span>
+                <Icon name="arrow" />
+              </button>
+              <div className="launch-divider">
+                <span>OR USE A CLUB</span>
+              </div>
+              {clubs.length === 0 ? (
+                <div className="setup-empty">
+                  <strong>No authorized clubs</strong>
+                  <p>Create a club or ask an admin for organizer access.</p>
+                </div>
+              ) : (
+                <div className="match-club-options">
+                  {clubs.map((club) => (
+                    <button
+                      type="button"
+                      key={club.id}
+                      className="match-launch-card"
+                      onClick={() => onCreateClub(club)}
+                    >
+                      <Avatar initials={club.initials} tone="green" />
+                      <span>
+                        <strong>{club.name}</strong>
+                        <small>Internal or external club match</small>
+                      </span>
+                      <Icon name="arrow" />
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </>
+  );
 }
 
-function Profile({ name, email, onSignOut }: { name: string; email: string; onSignOut: () => Promise<void> }) {
-  return <div className="page">
-    <section className="profile-hero"><Avatar initials={getInitials(name, email)} tone="green" /><div><h1>{name}</h1><p>{email}</p><span>PLAYER · ORGANIZER</span></div></section>
-    <section className="stats-banner"><div><strong>23</strong><span>MATCHES</span></div><div><strong>486</strong><span>RUNS</span></div><div><strong>17</strong><span>WICKETS</span></div></section>
-    <section className="section-block"><span className="eyebrow">ACCOUNT</span><div className="settings-list">
-      <div><span className="setting-icon"><Icon name="users" /></span><span><strong>Club memberships</strong><small>2 active clubs</small></span><Icon name="chevron" /></div>
-      <div><span className="setting-icon"><Icon name="bell" /></span><span><strong>Notifications</strong><small>Match reminders are on</small></span><Icon name="chevron" /></div>
-      <div><span className="setting-icon"><Icon name="sync" /></span><span><strong>Offline & sync</strong><small>All changes are synced</small></span><span className="available-dot" /></div>
-      <div><span className="setting-icon"><Icon name="settings" /></span><span><strong>App settings</strong><small>Scoring and appearance</small></span><Icon name="chevron" /></div>
-    </div></section>
-    <section className="install-card"><span className="install-icon"><Icon name="bolt" /></span><div><strong>Keep CricApp on your home screen</strong><p>Install the app for faster access and reliable offline scoring.</p></div><Button className="small-button">Install</Button></section>
-    <Button className="sign-out-button" onClick={onSignOut}>Sign out</Button>
-  </div>;
+function MatchScorecard({
+  match,
+  onBack,
+  onPlayAgain,
+  onRemove,
+}: {
+  match: CricketMatch;
+  onBack: () => void;
+  onPlayAgain: () => void;
+  onRemove: () => void;
+}) {
+  const score = match.score;
+  const type =
+    match.mode === "club-internal"
+      ? "Internal club match"
+      : match.mode === "club-external"
+        ? "External club match"
+        : "Quick match";
+  return (
+    <>
+      <PageHeader
+        title="Scorecard"
+        eyebrow={match.status.toUpperCase()}
+        onBack={onBack}
+        backLabel="Back to all matches"
+      />
+      <div className="page scorecard-page">
+        <section className="scorecard-hero">
+          <span className="eyebrow light">{match.status.toUpperCase()}</span>
+          <h2>
+            {score?.result ||
+              (match.status === "abandoned"
+                ? "Match abandoned"
+                : "Match scorecard")}
+          </h2>
+          <p>
+            {match.teams[0].name} vs {match.teams[1].name}
+          </p>
+          <small>
+            {type} ·{" "}
+            {match.mode === "quick"
+              ? "Separate quick statistics"
+              : "Counts toward club records"}
+          </small>
+        </section>
+        <section className="scorecard-meta">
+          <div>
+            <span>Toss</span>
+            <strong>
+              {
+                match.teams.find((team) => team.id === match.toss.winnerId)
+                  ?.name
+              }{" "}
+              chose to {match.toss.decision}
+            </strong>
+          </div>
+          <div>
+            <span>Rules</span>
+            <strong>
+              {match.rules.overs} overs · {match.rules.ballsPerOver} balls ·
+              Free hit {match.rules.freeHit ? "on" : "off"}
+            </strong>
+          </div>
+          {match.rules.venue && (
+            <div>
+              <span>Venue</span>
+              <strong>{match.rules.venue}</strong>
+            </div>
+          )}
+        </section>
+        {score?.innings.map((innings, inningsIndex) => {
+          const team = match.teams.find(
+            (entry) => entry.id === innings.battingTeamId,
+          )!;
+          const batting = new Map<
+            string,
+            { runs: number; balls: number; fours: number; sixes: number }
+          >();
+          const bowling = new Map<
+            string,
+            { runs: number; balls: number; wickets: number }
+          >();
+          innings.deliveries.forEach((delivery) => {
+            const bat = batting.get(delivery.strikerId) || {
+              runs: 0,
+              balls: 0,
+              fours: 0,
+              sixes: 0,
+            };
+            bat.runs += delivery.batRuns;
+            if (delivery.legal) bat.balls += 1;
+            if (delivery.boundary === 4) bat.fours += 1;
+            if (delivery.boundary === 6) bat.sixes += 1;
+            batting.set(delivery.strikerId, bat);
+            const bowl = bowling.get(delivery.bowlerId) || {
+              runs: 0,
+              balls: 0,
+              wickets: 0,
+            };
+            bowl.balls += delivery.legal ? 1 : 0;
+            bowl.runs +=
+              delivery.batRuns +
+              (delivery.extraType === "bye" || delivery.extraType === "leg-bye"
+                ? 0
+                : delivery.extraType === "no-ball" && delivery.runningExtraType
+                  ? match.rules.noBallPenalty
+                  : delivery.extraRuns);
+            if (delivery.wicket && delivery.wicket.type !== "run-out")
+              bowl.wickets += 1;
+            bowling.set(delivery.bowlerId, bowl);
+          });
+          const fielding = match.teams.find(
+            (entry) => entry.id !== innings.battingTeamId,
+          )!;
+          const extras = innings.deliveries.reduce(
+            (sum, delivery) => sum + delivery.extraRuns,
+            0,
+          );
+          return (
+            <section
+              className="scorecard-innings"
+              key={`${innings.battingTeamId}-${inningsIndex}`}
+            >
+              <header>
+                <div>
+                  <span>{inningsIndex + 1} innings</span>
+                  <strong>{team.name}</strong>
+                </div>
+                <b>
+                  {innings.runs}/{innings.wickets}
+                  <small>
+                    {Math.floor(innings.legalBalls / match.rules.ballsPerOver)}.
+                    {innings.legalBalls % match.rules.ballsPerOver} ov
+                  </small>
+                </b>
+              </header>
+              <h3>Batting</h3>
+              {team.players
+                .filter((player) => batting.has(player.id))
+                .map((player) => {
+                  const item = batting.get(player.id)!;
+                  return (
+                    <div className="scorecard-row" key={player.id}>
+                      <span>{player.name}</span>
+                      <strong>{item.runs}</strong>
+                      <small>
+                        {item.balls} balls · {item.fours}×4 · {item.sixes}×6
+                      </small>
+                    </div>
+                  );
+                })}
+              <div className="scorecard-row extras">
+                <span>Extras</span>
+                <strong>{extras}</strong>
+              </div>
+              <h3>Bowling</h3>
+              {fielding.players
+                .filter((player) => bowling.has(player.id))
+                .map((player) => {
+                  const item = bowling.get(player.id)!;
+                  return (
+                    <div className="scorecard-row" key={player.id}>
+                      <span>{player.name}</span>
+                      <strong>
+                        {item.wickets}/{item.runs}
+                      </strong>
+                      <small>
+                        {Math.floor(item.balls / match.rules.ballsPerOver)}.
+                        {item.balls % match.rules.ballsPerOver} overs
+                      </small>
+                    </div>
+                  );
+                })}
+              <h3>Deliveries</h3>
+              <div className="scorecard-timeline">
+                {innings.deliveries.map((delivery, deliveryIndex) => (
+                  <span
+                    key={delivery.id}
+                    className={delivery.wicket ? "wicket" : ""}
+                  >
+                    <b>
+                      {Math.floor(deliveryIndex / match.rules.ballsPerOver)}.
+                      {(deliveryIndex % match.rules.ballsPerOver) + 1}
+                    </b>
+                    {delivery.label}
+                  </span>
+                ))}
+              </div>
+            </section>
+          );
+        }) || (
+          <div className="full-empty">
+            <h3>No deliveries recorded</h3>
+            <p>This match has no saved scoring events.</p>
+          </div>
+        )}
+        <Button
+          className="score-primary-action scorecard-rematch"
+          onClick={onPlayAgain}
+        >
+          Play again with these teams
+        </Button>
+        <button
+          type="button"
+          className="remove-match-button"
+          onClick={onRemove}
+        >
+          Remove match
+        </button>
+      </div>
+    </>
+  );
+}
+
+function Profile({
+  name,
+  email,
+  onSignOut,
+}: {
+  name: string;
+  email: string;
+  onSignOut: () => Promise<void>;
+}) {
+  const [summary, setSummary] = useState({
+    matches: 0,
+    completed: 0,
+    clubs: 0,
+  });
+  const [invitations, setInvitations] = useState<ClubInvitation[]>([]);
+  const [online, setOnline] = useState(navigator.onLine);
+  const [installReady, setInstallReady] = useState(
+    Boolean(window.cricAppInstallPrompt),
+  );
+
+  useEffect(() => {
+    Promise.all([listMatches(), listClubs(), listInvitations()])
+      .then(([matches, clubs, pending]) => {
+        setSummary({
+          matches: matches.length,
+          completed: matches.filter((match) => match.status === "completed")
+            .length,
+          clubs: clubs.myClubs.length,
+        });
+        setInvitations(pending);
+      })
+      .catch(() => undefined);
+    const handleOnline = () => setOnline(navigator.onLine);
+    const handleInstall = () => setInstallReady(true);
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOnline);
+    window.addEventListener("cricapp-install-ready", handleInstall);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOnline);
+      window.removeEventListener("cricapp-install-ready", handleInstall);
+    };
+  }, []);
+
+  async function installApp() {
+    const prompt = window.cricAppInstallPrompt;
+    if (!prompt) return;
+    await prompt.prompt();
+    await prompt.userChoice;
+    window.cricAppInstallPrompt = undefined;
+    setInstallReady(false);
+  }
+
+  async function answerInvitation(
+    invitationId: string,
+    decision: "accept" | "decline",
+  ) {
+    await respondToInvitation(invitationId, decision);
+    setInvitations((current) =>
+      current.filter((invitation) => invitation.id !== invitationId),
+    );
+    if (decision === "accept")
+      setSummary((current) => ({ ...current, clubs: current.clubs + 1 }));
+  }
+
+  return (
+    <>
+      <PageHeader title="Profile" eyebrow="ACCOUNT" />
+      <div className="page">
+        <section className="profile-hero">
+          <Avatar initials={getInitials(name, email)} tone="green" />
+          <div>
+            <h2>{name}</h2>
+            <p>{email}</p>
+            <span>PLAYER · ORGANIZER</span>
+          </div>
+        </section>
+        <section className="stats-banner">
+          <div>
+            <strong>{summary.matches}</strong>
+            <span>MATCHES</span>
+          </div>
+          <div>
+            <strong>{summary.completed}</strong>
+            <span>COMPLETED</span>
+          </div>
+          <div>
+            <strong>{summary.clubs}</strong>
+            <span>CLUBS</span>
+          </div>
+        </section>
+        {invitations.length > 0 && (
+          <section className="profile-invitations">
+            <span className="eyebrow">PENDING INVITATIONS</span>
+            {invitations.map((invitation) => (
+              <div key={invitation.id}>
+                <span>
+                  <strong>{invitation.clubName}</strong>
+                  <small>Join as {invitation.role}</small>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => answerInvitation(invitation.id, "decline")}
+                >
+                  Decline
+                </button>
+                <button
+                  type="button"
+                  className="accept"
+                  onClick={() => answerInvitation(invitation.id, "accept")}
+                >
+                  Accept
+                </button>
+              </div>
+            ))}
+          </section>
+        )}
+        <section className="section-block">
+          <span className="eyebrow">ACCOUNT</span>
+          <div className="settings-list">
+            <div>
+              <span className="setting-icon">
+                <Icon name="users" />
+              </span>
+              <span>
+                <strong>Club memberships</strong>
+                <small>
+                  {summary.clubs} active club{summary.clubs === 1 ? "" : "s"}
+                </small>
+              </span>
+              <Icon name="chevron" />
+            </div>
+            <div>
+              <span className="setting-icon">
+                <Icon name="bell" />
+              </span>
+              <span>
+                <strong>Invitations</strong>
+                <small>{invitations.length} pending</small>
+              </span>
+              <Icon name="chevron" />
+            </div>
+            <div>
+              <span className="setting-icon">
+                <Icon name="sync" />
+              </span>
+              <span>
+                <strong>Offline & sync</strong>
+                <small>
+                  {online
+                    ? "Connected"
+                    : "Offline — local scoring remains available"}
+                </small>
+              </span>
+              <span className="available-dot" />
+            </div>
+            <div>
+              <span className="setting-icon">
+                <Icon name="settings" />
+              </span>
+              <span>
+                <strong>App settings</strong>
+                <small>Scoring and appearance</small>
+              </span>
+              <Icon name="chevron" />
+            </div>
+          </div>
+        </section>
+        <section className="install-card">
+          <span className="install-icon">
+            <Icon name="bolt" />
+          </span>
+          <div>
+            <strong>Keep CricApp on your home screen</strong>
+            <p>
+              {installReady
+                ? "Install for faster access and reliable offline scoring."
+                : "Use your browser’s Add to Home Screen option when available."}
+            </p>
+          </div>
+          <Button
+            className="small-button"
+            onClick={installApp}
+            disabled={!installReady}
+          >
+            Install
+          </Button>
+        </section>
+        <Button className="sign-out-button" onClick={onSignOut}>
+          Sign out
+        </Button>
+      </div>
+    </>
+  );
 }

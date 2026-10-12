@@ -1,0 +1,6 @@
+project_id = "CricApp"
+
+[functions.make-server-28e50dbb]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/server/index.tsx"

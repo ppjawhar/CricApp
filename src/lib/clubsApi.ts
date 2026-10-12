@@ -10,6 +10,16 @@ export type ClubPlayer = {
   createdAt: string;
 };
 
+export type ClubInvitation = {
+  id: string;
+  clubId: string;
+  clubName: string;
+  email: string;
+  role: "organizer" | "scorer" | "member";
+  status: "pending" | "accepted" | "declined";
+  createdAt: string;
+};
+
 export type Club = {
   id: string;
   name: string;
@@ -20,6 +30,24 @@ export type Club = {
   memberCount: number;
   matchCount: number;
   record: { wins: number; losses: number; ties: number };
+  internalMatchCount?: number;
+  externalMatchCount?: number;
+  abandonedCount?: number;
+  playerStats?: Array<{
+    playerId: string;
+    appearances: number;
+    innings: number;
+    runs: number;
+    balls: number;
+    highest: number;
+    fours: number;
+    sixes: number;
+    wickets: number;
+    ballsBowled: number;
+    oversEquivalent: number;
+    runsConceded: number;
+  }>;
+  recentMatches?: import("./matchesApi").CricketMatch[];
   players: ClubPlayer[];
   membership?: { role: "admin" | "organizer" | "scorer" | "member" };
   joined?: boolean;
@@ -58,7 +86,17 @@ async function request(path: string, options?: RequestInit) {
 }
 
 export async function listClubs(): Promise<{ myClubs: Club[]; browseClubs: Club[] }> {
-  return request("/clubs");
+  const { data } = await supabase.auth.getSession();
+  const cacheKey = `cricapp-clubs:${data.session?.user.id || "anonymous"}`;
+  try {
+    const result = await request("/clubs") as { myClubs: Club[]; browseClubs: Club[] };
+    localStorage.setItem(cacheKey, JSON.stringify(result));
+    return result;
+  } catch (error) {
+    const cached = localStorage.getItem(cacheKey);
+    if (cached) return JSON.parse(cached);
+    throw error;
+  }
 }
 
 export async function createClub(input: { name: string; location?: string }): Promise<Club> {
@@ -92,4 +130,18 @@ export async function updateClubPlayer(
 ): Promise<Club> {
   const result = await request(`/clubs/${clubId}/players/${playerId}`, { method: "PUT", body: JSON.stringify(input) });
   return result.club as Club;
+}
+
+export async function inviteClubMember(clubId: string, email: string, role: ClubInvitation["role"]): Promise<ClubInvitation> {
+  const result = await request(`/clubs/${clubId}/invitations`, { method: "POST", body: JSON.stringify({ email, role }) });
+  return result.invitation as ClubInvitation;
+}
+
+export async function listInvitations(): Promise<ClubInvitation[]> {
+  const result = await request("/invitations");
+  return result.invitations as ClubInvitation[];
+}
+
+export async function respondToInvitation(invitationId: string, decision: "accept" | "decline"): Promise<void> {
+  await request(`/invitations/${invitationId}/respond`, { method: "POST", body: JSON.stringify({ decision }) });
 }

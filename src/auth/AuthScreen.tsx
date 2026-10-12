@@ -168,9 +168,8 @@ export default function AuthScreen({
         </div>
       </section>
 
+      <header className="mobile-auth-brand"><Brand /></header>
       <section className="auth-panel">
-        <div className="mobile-auth-brand"><Brand /></div>
-
         {mode === "welcome" && (
           <div className="auth-content auth-welcome">
             <span className="auth-eyebrow">WELCOME TO CRICAPP</span>

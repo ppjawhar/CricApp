@@ -1,6 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Club } from "../lib/clubsApi";
 import { createMatch, type CricketMatch, type MatchPlayer, type MatchTeam } from "../lib/matchesApi";
+import PageHeader from "../components/PageHeader";
 
 type SetupStep = "type" | "teams" | "rules" | "toss" | "review" | "openers";
 
@@ -15,50 +16,60 @@ function namedTemporaryPlayers(prefix: string, names: string[]): MatchPlayer[] {
 export default function MatchSetup({
   entry,
   club,
+  template,
   onCancel,
   onCreated,
 }: {
   entry: "quick" | "club";
   club?: Club;
+  template?: CricketMatch;
   onCancel: () => void;
   onCreated: (match: CricketMatch) => void;
 }) {
-  const [step, setStep] = useState<SetupStep>(entry === "club" ? "type" : "teams");
-  const [mode, setMode] = useState<CricketMatch["mode"]>(entry === "quick" ? "quick" : "club-internal");
-  const [selectedPlayers, setSelectedPlayers] = useState<string[]>([]);
-  const [splitMode, setSplitMode] = useState<"random" | "manual">("random");
-  const [manualAssignments, setManualAssignments] = useState<Record<string, "team-a" | "team-b">>({});
-  const [teamAName, setTeamAName] = useState(entry === "quick" ? "Team A" : "Northside");
-  const [teamBName, setTeamBName] = useState(entry === "quick" ? "Team B" : "Southside");
-  const [teamACount, setTeamACount] = useState(6);
-  const [teamBCount, setTeamBCount] = useState(6);
-  const [teamAPlayerNames, setTeamAPlayerNames] = useState(() => Array.from({ length: 6 }, (_, index) => `A Player ${index + 1}`));
-  const [teamBPlayerNames, setTeamBPlayerNames] = useState(() => Array.from({ length: 6 }, (_, index) => `B Player ${index + 1}`));
-  const [opponentName, setOpponentName] = useState("Opponent Team");
-  const [opponentCount, setOpponentCount] = useState(6);
-  const [opponentPlayerNames, setOpponentPlayerNames] = useState(() => Array.from({ length: 6 }, (_, index) => `Opponent Player ${index + 1}`));
-  const [teams, setTeams] = useState<[MatchTeam, MatchTeam] | null>(null);
-  const [overs, setOvers] = useState(10);
-  const [ballsPerOver, setBallsPerOver] = useState(6);
-  const [widePenalty, setWidePenalty] = useState(1);
-  const [noBallPenalty, setNoBallPenalty] = useState(1);
-  const [freeHit, setFreeHit] = useState(true);
-  const [lastMan, setLastMan] = useState(false);
-  const [venue, setVenue] = useState(club?.location || "");
-  const [scheduledDate, setScheduledDate] = useState(new Date().toISOString().slice(0, 10));
-  const [tossMethod, setTossMethod] = useState<"physical" | "in-app">("physical");
-  const [tossWinner, setTossWinner] = useState<"team-a" | "team-b" | "">("");
+  const draftKey = `cricapp-setup:${entry}:${club?.id || "quick"}:${template?.id || "new"}`;
+  const savedDraft = useMemo(() => { try { return JSON.parse(localStorage.getItem(draftKey) || "null") || {}; } catch { return {}; } }, [draftKey]);
+  const [step, setStep] = useState<SetupStep>(savedDraft.step || (template ? "toss" : entry === "club" ? "type" : "teams"));
+  const [mode, setMode] = useState<CricketMatch["mode"]>(savedDraft.mode || template?.mode || (entry === "quick" ? "quick" : "club-internal"));
+  const [selectedPlayers, setSelectedPlayers] = useState<string[]>(savedDraft.selectedPlayers || []);
+  const [splitMode, setSplitMode] = useState<"random" | "manual">(savedDraft.splitMode || "random");
+  const [manualAssignments, setManualAssignments] = useState<Record<string, "team-a" | "team-b">>(savedDraft.manualAssignments || {});
+  const [teamAName, setTeamAName] = useState(savedDraft.teamAName || template?.teams[0].name || (entry === "quick" ? "Team A" : "Northside"));
+  const [teamBName, setTeamBName] = useState(savedDraft.teamBName || template?.teams[1].name || (entry === "quick" ? "Team B" : "Southside"));
+  const [teamACount, setTeamACount] = useState(savedDraft.teamACount || template?.teams[0].players.length || 6);
+  const [teamBCount, setTeamBCount] = useState(savedDraft.teamBCount || template?.teams[1].players.length || 6);
+  const [teamAPlayerNames, setTeamAPlayerNames] = useState<string[]>(savedDraft.teamAPlayerNames || template?.teams[0].players.map((player) => player.name) || Array.from({ length: 6 }, (_, index) => `A Player ${index + 1}`));
+  const [teamBPlayerNames, setTeamBPlayerNames] = useState<string[]>(savedDraft.teamBPlayerNames || template?.teams[1].players.map((player) => player.name) || Array.from({ length: 6 }, (_, index) => `B Player ${index + 1}`));
+  const [opponentName, setOpponentName] = useState(savedDraft.opponentName || "Opponent Team");
+  const [opponentCount, setOpponentCount] = useState(savedDraft.opponentCount || 6);
+  const [opponentPlayerNames, setOpponentPlayerNames] = useState<string[]>(savedDraft.opponentPlayerNames || Array.from({ length: 6 }, (_, index) => `Opponent Player ${index + 1}`));
+  const [teams, setTeams] = useState<[MatchTeam, MatchTeam] | null>(savedDraft.teams || template?.teams || null);
+  const [overs, setOvers] = useState(savedDraft.overs || template?.rules.overs || 10);
+  const [ballsPerOver, setBallsPerOver] = useState(savedDraft.ballsPerOver || template?.rules.ballsPerOver || 6);
+  const [widePenalty, setWidePenalty] = useState(savedDraft.widePenalty ?? template?.rules.widePenalty ?? 1);
+  const [noBallPenalty, setNoBallPenalty] = useState(savedDraft.noBallPenalty ?? template?.rules.noBallPenalty ?? 1);
+  const [freeHit, setFreeHit] = useState(savedDraft.freeHit ?? template?.rules.freeHit ?? true);
+  const [lastMan, setLastMan] = useState(savedDraft.lastMan ?? template?.rules.lastMan ?? false);
+  const [wicketLimitA, setWicketLimitA] = useState(savedDraft.wicketLimitA || template?.rules.wicketLimits.teamA || 0);
+  const [wicketLimitB, setWicketLimitB] = useState(savedDraft.wicketLimitB || template?.rules.wicketLimits.teamB || 0);
+  const [venue, setVenue] = useState(savedDraft.venue ?? template?.rules.venue ?? club?.location ?? "");
+  const [scheduledDate, setScheduledDate] = useState(savedDraft.scheduledDate || new Date().toISOString().slice(0, 10));
+  const [tossMethod, setTossMethod] = useState<"physical" | "in-app">(savedDraft.tossMethod || "physical");
+  const [tossWinner, setTossWinner] = useState<"team-a" | "team-b" | "">(savedDraft.tossWinner || "");
   const [tossing, setTossing] = useState(false);
-  const [decision, setDecision] = useState<"bat" | "bowl">("bat");
-  const [striker, setStriker] = useState("");
-  const [nonStriker, setNonStriker] = useState("");
-  const [bowler, setBowler] = useState("");
+  const [decision, setDecision] = useState<"bat" | "bowl">(savedDraft.decision || "bat");
+  const [striker, setStriker] = useState(savedDraft.striker || "");
+  const [nonStriker, setNonStriker] = useState(savedDraft.nonStriker || "");
+  const [bowler, setBowler] = useState(savedDraft.bowler || "");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
   const activeRoster = useMemo(() => club?.players.filter((player) => player.status === "active") ?? [], [club]);
   const steps: SetupStep[] = entry === "club" ? ["type", "teams", "rules", "toss", "review", "openers"] : ["teams", "rules", "toss", "review", "openers"];
   const stepIndex = steps.indexOf(step);
+
+  useEffect(() => {
+    localStorage.setItem(draftKey, JSON.stringify({ step, mode, selectedPlayers, splitMode, manualAssignments, teamAName, teamBName, teamACount, teamBCount, teamAPlayerNames, teamBPlayerNames, opponentName, opponentCount, opponentPlayerNames, teams, overs, ballsPerOver, widePenalty, noBallPenalty, freeHit, lastMan, wicketLimitA, wicketLimitB, venue, scheduledDate, tossMethod, tossWinner, decision, striker, nonStriker, bowler }));
+  }, [draftKey, step, mode, selectedPlayers, splitMode, manualAssignments, teamAName, teamBName, teamACount, teamBCount, teamAPlayerNames, teamBPlayerNames, opponentName, opponentCount, opponentPlayerNames, teams, overs, ballsPerOver, widePenalty, noBallPenalty, freeHit, lastMan, wicketLimitA, wicketLimitB, venue, scheduledDate, tossMethod, tossWinner, decision, striker, nonStriker, bowler]);
 
   function chooseType(nextMode: CricketMatch["mode"]) {
     setMode(nextMode);
@@ -146,6 +157,8 @@ export default function MatchSetup({
       ];
     }
     setTeams(nextTeams);
+    setWicketLimitA(lastMan ? nextTeams[0].players.length : nextTeams[0].players.length - 1);
+    setWicketLimitB(lastMan ? nextTeams[1].players.length : nextTeams[1].players.length - 1);
     setError("");
     setStep("rules");
   }
@@ -155,8 +168,20 @@ export default function MatchSetup({
       setError("Enter valid positive match rules.");
       return;
     }
+    if (!teams || wicketLimitA < 1 || wicketLimitB < 1 || wicketLimitA > (lastMan ? teams[0].players.length : teams[0].players.length - 1) || wicketLimitB > (lastMan ? teams[1].players.length : teams[1].players.length - 1)) {
+      setError("Wicket limits must fit each team and the selected last-man rule.");
+      return;
+    }
     setError("");
     setStep("toss");
+  }
+
+  function changeLastMan(enabled: boolean) {
+    setLastMan(enabled);
+    if (teams) {
+      setWicketLimitA(enabled ? teams[0].players.length : Math.min(wicketLimitA, teams[0].players.length - 1));
+      setWicketLimitB(enabled ? teams[1].players.length : Math.min(wicketLimitB, teams[1].players.length - 1));
+    }
   }
 
   function runToss() {
@@ -168,6 +193,17 @@ export default function MatchSetup({
       setTossWinner(Math.random() < 0.5 ? "team-a" : "team-b");
       setTossing(false);
     }, 1700);
+  }
+
+  function reshuffleTemplateTeams() {
+    if (!teams || mode !== "club-internal") return;
+    const firstSize = teams[0].players.length;
+    const players = [...teams[0].players, ...teams[1].players].sort(() => Math.random() - 0.5);
+    setTeams([
+      { ...teams[0], players: players.slice(0, firstSize) },
+      { ...teams[1], players: players.slice(firstSize) },
+    ]);
+    setTossWinner("");
   }
 
   function battingAndFieldingTeams() {
@@ -228,12 +264,13 @@ export default function MatchSetup({
           venue: venue.trim() || undefined,
           scheduledDate,
           wicketLimits: {
-            teamA: lastMan ? teams[0].players.length : teams[0].players.length - 1,
-            teamB: lastMan ? teams[1].players.length : teams[1].players.length - 1,
+            teamA: wicketLimitA,
+            teamB: wicketLimitB,
           },
         },
         toss: { method: tossMethod, winnerId: tossWinner, decision, strikerId: striker, nonStrikerId: nonStriker, bowlerId: bowler },
       });
+      localStorage.removeItem(draftKey);
       onCreated(match);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to create match");
@@ -244,13 +281,18 @@ export default function MatchSetup({
 
   const sides = battingAndFieldingTeams();
 
+  function goBack() {
+    if (stepIndex <= 0) {
+      onCancel();
+      return;
+    }
+    setError("");
+    setStep(steps[stepIndex - 1]);
+  }
+
   return (
     <main className="match-setup-shell">
-      <header className="setup-header">
-        <button type="button" className="setup-back" onClick={onCancel}>←</button>
-        <div><span>{entry === "quick" ? "QUICK SCORING" : club?.name?.toUpperCase()}</span><strong>Create match</strong></div>
-        <span className="setup-step-count">{stepIndex + 1}/{steps.length}</span>
-      </header>
+      <PageHeader title="Create match" eyebrow={entry === "quick" ? "QUICK SCORING" : club?.name?.toUpperCase()} onBack={goBack} backLabel={stepIndex > 0 ? "Previous setup step" : "Exit match setup"} action={<span className="setup-step-count">{stepIndex + 1}/{steps.length}</span>} />
       <div className="setup-progress">{steps.map((item, index) => <span key={item} className={index <= stepIndex ? "complete" : ""} />)}</div>
 
       <section className="setup-content">
@@ -288,7 +330,9 @@ export default function MatchSetup({
           <span className="setup-kicker">MATCH RULES</span><h1>Set the playing rules</h1><p>These rules lock after the first delivery.</p>
           <div className="rules-grid"><NumberField label="Overs per innings" value={overs} onChange={setOvers} /><NumberField label="Balls per over" value={ballsPerOver} onChange={setBallsPerOver} /><NumberField label="Wide penalty" value={widePenalty} onChange={setWidePenalty} /><NumberField label="No-ball penalty" value={noBallPenalty} onChange={setNoBallPenalty} /></div>
           <ToggleRow title="Free hit after no-ball" caption="Enabled by default" checked={freeHit} onChange={setFreeHit} />
-          <ToggleRow title="Last-man batting" caption="Remaining batter continues alone" checked={lastMan} onChange={setLastMan} />
+          <ToggleRow title="Last-man batting" caption="Remaining batter continues alone" checked={lastMan} onChange={changeLastMan} />
+          <div className="rules-grid"><NumberField label={`${teams?.[0].name || "Team A"} wicket limit`} value={wicketLimitA} onChange={setWicketLimitA} /><NumberField label={`${teams?.[1].name || "Team B"} wicket limit`} value={wicketLimitB} onChange={setWicketLimitB} /></div>
+          <p className="rules-explanation">Innings end at the wicket limit, the over limit, a successful chase or a confirmed manual end.</p>
           <div className="team-name-row"><label><span>Venue</span><input value={venue} onChange={(event) => setVenue(event.target.value)} placeholder="Optional" /></label><label><span>Match date</span><input type="date" value={scheduledDate} onChange={(event) => setScheduledDate(event.target.value)} /></label></div>
           <SetupError message={error} />
           <div className="setup-footer-buttons"><button type="button" className="setup-secondary" onClick={() => setStep("teams")}>Back</button><button type="button" className="setup-primary" onClick={continueFromRules}>Continue to toss <span>→</span></button></div>
@@ -296,6 +340,7 @@ export default function MatchSetup({
 
         {step === "toss" && teams && <div className="setup-section">
           <span className="setup-kicker">TOSS</span><h1>Decide who bats first</h1><p>Record a physical toss or let CricApp make the call.</p>
+          {template && mode === "club-internal" && <button type="button" className="setup-secondary wide" onClick={reshuffleTemplateTeams}>Reshuffle teams for this match</button>}
           <div className="method-tabs"><button type="button" disabled={tossing} className={tossMethod === "physical" ? "active" : ""} onClick={() => { setTossMethod("physical"); setTossWinner(""); }}>Physical toss</button><button type="button" disabled={tossing} className={tossMethod === "in-app" ? "active" : ""} onClick={() => { setTossMethod("in-app"); setTossWinner(""); }}>In-app toss</button></div>
           {tossMethod === "in-app" && <button type="button" className={`toss-button ${tossing ? "tossing" : ""} ${tossWinner ? "has-result" : ""}`} onClick={runToss} disabled={tossing}><span className="toss-coin"><i>H</i><i>T</i></span><strong>{tossing ? "Tossing…" : tossWinner ? `${teams.find((team) => team.id === tossWinner)?.name} won the toss` : "Run the toss"}</strong><small>{tossing ? `${teams[0].name} · ${teams[1].name}` : tossWinner ? "Tap to run the toss again" : "Let CricApp choose the winner"}</small></button>}
           {(tossMethod === "physical" || tossWinner) && <><div className="toss-choice"><span>Toss winner</span>{teams.map((team) => <button type="button" key={team.id} className={tossWinner === team.id ? "selected" : ""} onClick={() => setTossWinner(team.id)}>{team.name}</button>)}</div>
