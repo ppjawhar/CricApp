@@ -32,7 +32,6 @@ export default function MatchSetup({
   const [step, setStep] = useState<SetupStep>(savedDraft.step || (template ? "toss" : entry === "club" ? "type" : "teams"));
   const [mode, setMode] = useState<CricketMatch["mode"]>(savedDraft.mode || template?.mode || (entry === "quick" ? "quick" : "club-internal"));
   const [selectedPlayers, setSelectedPlayers] = useState<string[]>(savedDraft.selectedPlayers || []);
-  const [splitMode, setSplitMode] = useState<"random" | "manual">(savedDraft.splitMode || "random");
   const [manualAssignments, setManualAssignments] = useState<Record<string, "team-a" | "team-b">>(savedDraft.manualAssignments || {});
   const [teamAName, setTeamAName] = useState(savedDraft.teamAName || template?.teams[0].name || (entry === "quick" ? "Team A" : "Northside"));
   const [teamBName, setTeamBName] = useState(savedDraft.teamBName || template?.teams[1].name || (entry === "quick" ? "Team B" : "Southside"));
@@ -54,13 +53,20 @@ export default function MatchSetup({
   const [wicketLimitB, setWicketLimitB] = useState(savedDraft.wicketLimitB || template?.rules.wicketLimits.teamB || 0);
   const [venue, setVenue] = useState(savedDraft.venue ?? template?.rules.venue ?? club?.location ?? "");
   const [scheduledDate, setScheduledDate] = useState(savedDraft.scheduledDate || new Date().toISOString().slice(0, 10));
-  const [tossMethod, setTossMethod] = useState<"physical" | "in-app">(savedDraft.tossMethod || "physical");
+  const [tossMethod, setTossMethod] = useState<"physical" | "in-app">(savedDraft.tossMethod || "in-app");
   const [tossWinner, setTossWinner] = useState<"team-a" | "team-b" | "">(savedDraft.tossWinner || "");
   const [tossing, setTossing] = useState(false);
   const [decision, setDecision] = useState<"bat" | "bowl">(savedDraft.decision || "bat");
   const [striker, setStriker] = useState(savedDraft.striker || "");
   const [nonStriker, setNonStriker] = useState(savedDraft.nonStriker || "");
   const [bowler, setBowler] = useState(savedDraft.bowler || "");
+  const [scorerId, setScorerId] = useState(
+    savedDraft.scorerId ||
+      template?.scoringOwnerId ||
+      club?.members?.find((member) => member.role === "admin")?.userId ||
+      club?.createdBy ||
+      "",
+  );
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -69,8 +75,8 @@ export default function MatchSetup({
   const stepIndex = steps.indexOf(step);
 
   useEffect(() => {
-    localStorage.setItem(draftKey, JSON.stringify({ step, mode, selectedPlayers, splitMode, manualAssignments, teamAName, teamBName, teamACount, teamBCount, teamAPlayerNames, teamBPlayerNames, opponentName, opponentCount, opponentPlayerNames, teams, overs, ballsPerOver, widePenalty, noBallPenalty, freeHit, lastMan, wicketLimitA, wicketLimitB, venue, scheduledDate, tossMethod, tossWinner, decision, striker, nonStriker, bowler }));
-  }, [draftKey, step, mode, selectedPlayers, splitMode, manualAssignments, teamAName, teamBName, teamACount, teamBCount, teamAPlayerNames, teamBPlayerNames, opponentName, opponentCount, opponentPlayerNames, teams, overs, ballsPerOver, widePenalty, noBallPenalty, freeHit, lastMan, wicketLimitA, wicketLimitB, venue, scheduledDate, tossMethod, tossWinner, decision, striker, nonStriker, bowler]);
+    localStorage.setItem(draftKey, JSON.stringify({ step, mode, selectedPlayers, manualAssignments, teamAName, teamBName, teamACount, teamBCount, teamAPlayerNames, teamBPlayerNames, opponentName, opponentCount, opponentPlayerNames, teams, overs, ballsPerOver, widePenalty, noBallPenalty, freeHit, lastMan, wicketLimitA, wicketLimitB, venue, scheduledDate, tossMethod, tossWinner, decision, striker, nonStriker, bowler, scorerId }));
+  }, [draftKey, step, mode, selectedPlayers, manualAssignments, teamAName, teamBName, teamACount, teamBCount, teamAPlayerNames, teamBPlayerNames, opponentName, opponentCount, opponentPlayerNames, teams, overs, ballsPerOver, widePenalty, noBallPenalty, freeHit, lastMan, wicketLimitA, wicketLimitB, venue, scheduledDate, tossMethod, tossWinner, decision, striker, nonStriker, bowler, scorerId]);
 
   function chooseType(nextMode: CricketMatch["mode"]) {
     setMode(nextMode);
@@ -143,15 +149,11 @@ export default function MatchSetup({
       const chosen = activeRoster.filter((player) => selectedPlayers.includes(player.id));
       const first: MatchPlayer[] = [];
       const second: MatchPlayer[] = [];
-      if (splitMode === "manual") {
-        chosen.forEach((player) => {
-          const target = manualAssignments[player.id] === "team-b" ? second : first;
-          target.push({ id: player.id, name: player.name, source: "roster" });
-        });
-        if (first.length < 2 || second.length < 2) return setError("Assign at least two players to each team.");
-      } else {
-        [...chosen].sort(() => Math.random() - 0.5).forEach((player, index) => (index % 2 === 0 ? first : second).push({ id: player.id, name: player.name, source: "roster" }));
-      }
+      chosen.forEach((player) => {
+        const target = manualAssignments[player.id] === "team-b" ? second : first;
+        target.push({ id: player.id, name: player.name, source: "roster" });
+      });
+      if (first.length < 2 || second.length < 2) return setError("Assign at least two players to each team.");
       nextTeams = [
         { id: "team-a", name: teamAName.trim() || "Team A", players: first },
         { id: "team-b", name: teamBName.trim() || "Team B", players: second },
@@ -196,17 +198,6 @@ export default function MatchSetup({
     }, 1700);
   }
 
-  function reshuffleTemplateTeams() {
-    if (!teams || mode !== "club-internal") return;
-    const firstSize = teams[0].players.length;
-    const players = [...teams[0].players, ...teams[1].players].sort(() => Math.random() - 0.5);
-    setTeams([
-      { ...teams[0], players: players.slice(0, firstSize) },
-      { ...teams[1], players: players.slice(firstSize) },
-    ]);
-    setTossWinner("");
-  }
-
   function battingAndFieldingTeams() {
     if (!teams || !tossWinner) return null;
     const winnerBats = decision === "bat";
@@ -248,12 +239,17 @@ export default function MatchSetup({
       setError("Select two different opening batters and a bowler from the fielding side.");
       return;
     }
+    if (mode !== "quick" && !scorerId) {
+      setError("Choose a scorer for this match.");
+      return;
+    }
     setSaving(true);
     setError("");
     try {
       const match = await createMatch({
         mode,
         clubId: mode === "quick" ? undefined : club?.id,
+        scoringOwnerId: mode === "quick" ? undefined : scorerId,
         teams,
         rules: {
           overs,
@@ -310,11 +306,10 @@ export default function MatchSetup({
             <TeamCountCard label="TEAM A" name={teamAName} count={teamACount} onName={setTeamAName} onCount={(count) => changeQuickPlayerCount("a", count)} />
             <TeamCountCard label="TEAM B" name={teamBName} count={teamBCount} onName={setTeamBName} onCount={(count) => changeQuickPlayerCount("b", count)} />
           </div> : <>
-            {mode === "club-internal" && <div className="method-tabs split-tabs"><button type="button" className={splitMode === "random" ? "active" : ""} onClick={() => setSplitMode("random")}>Random split</button><button type="button" className={splitMode === "manual" ? "active" : ""} onClick={() => setSplitMode("manual")}>Manual teams</button></div>}
-            <div className="selection-summary"><strong>{selectedPlayers.length}</strong><span>players selected</span>{mode === "club-internal" && <small>{splitMode === "random" ? "Teams will be balanced randomly" : "Assign each selected player below"}</small>}</div>
+            <div className="selection-summary"><strong>{selectedPlayers.length}</strong><span>players selected</span>{mode === "club-internal" && <small>Assign each selected player below</small>}</div>
             {activeRoster.length === 0 ? <div className="setup-empty"><strong>No active players</strong><p>Add players to the club before creating a club match.</p></div> :
               <div className="setup-player-list">{activeRoster.map((player) => <button type="button" key={player.id} className={selectedPlayers.includes(player.id) ? "selected" : ""} onClick={() => togglePlayer(player.id)}><span className="setup-check">{selectedPlayers.includes(player.id) ? "✓" : ""}</span><span><strong>{player.name}</strong><small>{player.role?.replace("-", " ") || "Player"}</small></span></button>)}</div>}
-            {mode === "club-internal" && splitMode === "manual" && selectedPlayers.length > 0 && <div className="manual-team-list">{activeRoster.filter((player) => selectedPlayers.includes(player.id)).map((player) => <div key={player.id}><span>{player.name}</span><button type="button" className={manualAssignments[player.id] === "team-a" ? "selected" : ""} onClick={() => setManualAssignments((current) => ({ ...current, [player.id]: "team-a" }))}>A</button><button type="button" className={manualAssignments[player.id] === "team-b" ? "selected" : ""} onClick={() => setManualAssignments((current) => ({ ...current, [player.id]: "team-b" }))}>B</button></div>)}</div>}
+            {mode === "club-internal" && selectedPlayers.length > 0 && <div className="manual-team-list">{activeRoster.filter((player) => selectedPlayers.includes(player.id)).map((player) => <div key={player.id}><span>{player.name}</span><button type="button" className={manualAssignments[player.id] === "team-a" ? "selected" : ""} onClick={() => setManualAssignments((current) => ({ ...current, [player.id]: "team-a" }))}>A</button><button type="button" className={manualAssignments[player.id] === "team-b" ? "selected" : ""} onClick={() => setManualAssignments((current) => ({ ...current, [player.id]: "team-b" }))}>B</button></div>)}</div>}
             {mode === "club-internal" && <div className="team-name-row"><label><span>Team A name</span><input value={teamAName} onChange={(event) => setTeamAName(event.target.value)} /></label><label><span>Team B name</span><input value={teamBName} onChange={(event) => setTeamBName(event.target.value)} /></label></div>}
             {mode === "club-external" && <><div className="opponent-box external-opponent-box"><label><span>Opponent name</span><input value={opponentName} onChange={(event) => setOpponentName(event.target.value)} /></label><div className="opponent-stepper"><span>Opponent players</span><div><button type="button" onClick={() => changeOpponentCount(opponentCount - 1)} disabled={opponentCount <= 2}>−</button><strong>{opponentCount}</strong><button type="button" onClick={() => changeOpponentCount(opponentCount + 1)} disabled={opponentCount >= 20}>+</button></div></div></div>
               <div className="opponent-player-editor"><QuickPlayerEditor teamName={opponentName || "Opponent Team"} names={opponentPlayerNames} onChange={(index, value) => setOpponentPlayerNames((current) => current.map((name, playerIndex) => playerIndex === index ? value : name))} onReset={() => setOpponentPlayerNames(Array.from({ length: opponentCount }, (_, index) => `Opponent Player ${index + 1}`))} /></div></>}
@@ -332,19 +327,20 @@ export default function MatchSetup({
           <div className="rules-grid"><NumberField label="Overs per innings" value={overs} onChange={setOvers} /><NumberField label="Balls per over" value={ballsPerOver} onChange={setBallsPerOver} /><NumberField label="Wide penalty" value={widePenalty} onChange={setWidePenalty} /><NumberField label="No-ball penalty" value={noBallPenalty} onChange={setNoBallPenalty} /></div>
           <ToggleRow title="Free hit after no-ball" caption="Enabled by default" checked={freeHit} onChange={setFreeHit} />
           <ToggleRow title="Last-man batting" caption="Remaining batter continues alone" checked={lastMan} onChange={changeLastMan} />
-          <div className="rules-grid"><NumberField label={`${teams?.[0].name || "Team A"} wicket limit`} value={wicketLimitA} onChange={setWicketLimitA} /><NumberField label={`${teams?.[1].name || "Team B"} wicket limit`} value={wicketLimitB} onChange={setWicketLimitB} /></div>
+          <div className="rules-grid wicket-limit-grid"><NumberField label={`${teams?.[0].name || "Team A"} wicket limit`} value={wicketLimitA} onChange={setWicketLimitA} /><NumberField label={`${teams?.[1].name || "Team B"} wicket limit`} value={wicketLimitB} onChange={setWicketLimitB} /></div>
           <p className="rules-explanation">Innings end at the wicket limit, the over limit, a successful chase or a confirmed manual end.</p>
           <div className="team-name-row"><label><span>Venue</span><input value={venue} onChange={(event) => setVenue(event.target.value)} placeholder="Optional" /></label><label><span>Match date</span><input type="date" value={scheduledDate} onChange={(event) => setScheduledDate(event.target.value)} /></label></div>
+          {mode !== "quick" && <label className="match-scorer-field"><span>Assigned scorer</span><select value={scorerId} onChange={(event) => setScorerId(event.target.value)}>{(club?.members || []).map((member) => <option key={member.userId} value={member.userId}>{member.email || `${member.role} member`} · {member.role}</option>)}</select><small>Only this person can update the live score. Admins and organizers can change the scorer later.</small></label>}
           <SetupError message={error} />
           <div className="setup-footer-buttons"><button type="button" className="setup-secondary" onClick={() => setStep("teams")}>Back</button><button type="button" className="setup-primary" onClick={continueFromRules}>Continue to toss <span>→</span></button></div>
         </div>}
 
         {step === "toss" && teams && <div className="setup-section">
           <span className="setup-kicker">TOSS</span><h1>Decide who bats first</h1><p>Record a physical toss or let CricApp make the call.</p>
-          {template && mode === "club-internal" && <button type="button" className="setup-secondary wide" onClick={reshuffleTemplateTeams}>Reshuffle teams for this match</button>}
+          <div className="toss-team-list">{teams.map((team, index) => <div key={team.id} className={tossWinner === team.id ? "winner" : ""}><span>TEAM {index === 0 ? "A" : "B"}</span><strong>{team.name}</strong><small>{team.players.length} players</small><p>{team.players.map((player) => player.name).join(", ")}</p>{tossWinner === team.id && <b>TOSS WINNER</b>}</div>)}</div>
           <div className="method-tabs"><button type="button" disabled={tossing} className={tossMethod === "physical" ? "active" : ""} onClick={() => { setTossMethod("physical"); setTossWinner(""); }}>Physical toss</button><button type="button" disabled={tossing} className={tossMethod === "in-app" ? "active" : ""} onClick={() => { setTossMethod("in-app"); setTossWinner(""); }}>In-app toss</button></div>
-          {tossMethod === "in-app" && <button type="button" className={`toss-button ${tossing ? "tossing" : ""} ${tossWinner ? "has-result" : ""}`} onClick={runToss} disabled={tossing}><span className="toss-coin"><i>H</i><i>T</i></span><strong>{tossing ? "Tossing…" : tossWinner ? `${teams.find((team) => team.id === tossWinner)?.name} won the toss` : "Run the toss"}</strong><small>{tossing ? `${teams[0].name} · ${teams[1].name}` : tossWinner ? "Tap to run the toss again" : "Let CricApp choose the winner"}</small></button>}
-          {(tossMethod === "physical" || tossWinner) && <><div className="toss-choice"><span>Toss winner</span>{teams.map((team) => <button type="button" key={team.id} className={tossWinner === team.id ? "selected" : ""} onClick={() => setTossWinner(team.id)}>{team.name}</button>)}</div>
+          {tossMethod === "in-app" && <button type="button" className={`toss-button ${tossing ? "tossing" : ""} ${tossWinner ? "has-result" : ""}`} onClick={runToss} disabled={tossing}><span className="toss-coin"><i>H</i><i>T</i></span><strong>{tossing ? "Tossing…" : tossWinner ? `Team ${teams.findIndex((team) => team.id === tossWinner) === 0 ? "A" : "B"} — ${teams.find((team) => team.id === tossWinner)?.name} won the toss` : "Run the toss"}</strong><small>{tossing ? `${teams[0].name} · ${teams[1].name}` : tossWinner ? "Tap to run the toss again" : "Let CricApp choose the winner"}</small></button>}
+          {(tossMethod === "physical" || tossWinner) && <><div className="toss-choice"><span>Toss winner</span>{teams.map((team, index) => <button type="button" key={team.id} className={tossWinner === team.id ? "selected" : ""} onClick={() => setTossWinner(team.id)}>Team {index === 0 ? "A" : "B"} · {team.name}</button>)}</div>
           <div className="toss-choice"><span>Winner chose to</span><button type="button" className={decision === "bat" ? "selected" : ""} onClick={() => setDecision("bat")}>Bat</button><button type="button" className={decision === "bowl" ? "selected" : ""} onClick={() => setDecision("bowl")}>Bowl</button></div></>}
           <SetupError message={error} />
           <div className="setup-footer-buttons"><button type="button" className="setup-secondary" onClick={() => setStep("rules")}>Back</button><button type="button" className="setup-primary" onClick={continueFromToss}>Review match <span>→</span></button></div>
@@ -353,7 +349,7 @@ export default function MatchSetup({
         {step === "review" && teams && sides && <div className="setup-section">
           <span className="setup-kicker">READY TO PLAY</span><h1>Review your match</h1><p>Lineups and rules lock when the first delivery is scored.</p>
           <div className="review-versus"><div><span>{teams[0].players.length} PLAYERS</span><strong>{teams[0].name}</strong></div><b>VS</b><div><span>{teams[1].players.length} PLAYERS</span><strong>{teams[1].name}</strong></div></div>
-          <div className="review-details"><div><span>FORMAT</span><strong>{overs} overs · {ballsPerOver} balls</strong></div><div><span>TOSS</span><strong>{teams.find((team) => team.id === tossWinner)?.name} chose to {decision}</strong></div><div><span>VENUE</span><strong>{venue || "Not specified"}</strong></div><div><span>FIRST INNINGS</span><strong>{sides.batting.name} batting</strong></div></div>
+          <div className="review-details"><div><span>FORMAT</span><strong>{overs} overs · {ballsPerOver} balls</strong></div><div><span>TOSS</span><strong>{teams.find((team) => team.id === tossWinner)?.name} chose to {decision}</strong></div><div><span>VENUE</span><strong>{venue || "Not specified"}</strong></div><div><span>FIRST INNINGS</span><strong>{sides.batting.name} batting</strong></div>{mode !== "quick" && <div><span>SCORER</span><strong>{club?.members?.find((member) => member.userId === scorerId)?.email || "Club admin"}</strong></div>}</div>
           <div className="rules-badges"><span className={freeHit ? "on" : ""}>Free hit {freeHit ? "on" : "off"}</span><span className={lastMan ? "on" : ""}>Last man {lastMan ? "on" : "off"}</span></div>
           <SetupError message={error} />
           <div className="setup-footer-buttons"><button type="button" className="setup-secondary" onClick={() => setStep("toss")}>Back</button><button type="button" className="setup-primary create-match-final" onClick={continueToOpeners}>Choose opening players <span>→</span></button></div>

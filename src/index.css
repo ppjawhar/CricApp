@@ -40,10 +40,13 @@ button:focus-visible { outline: 3px solid rgba(104, 158, 47, .35); outline-offse
 .score-header-menu-wrap { position: relative; z-index: 22; }
 .score-more-button { width: 40px; height: 40px; display: grid; place-items: center; padding: 0; border: 1px solid var(--line); border-radius: 11px; background: white; color: var(--ink); cursor: pointer; }
 .score-more-button:disabled { cursor: wait; opacity: .6; }
-.score-menu-backdrop { position: fixed; inset: 0; z-index: 21; border: 0; background: transparent; cursor: default; }
-.score-header-menu { width: 220px; position: absolute; z-index: 22; top: calc(100% + 11px); right: 0; padding: 8px; border: 1px solid var(--line); border-radius: 15px; background: white; box-shadow: 0 16px 42px rgba(18,45,41,.18); }
-.score-header-menu > span { display: block; padding: 8px 10px 6px; color: #7b847f; font: 800 8px/1 "Manrope"; letter-spacing: 1.1px; }
-.score-header-menu > button { width: 100%; min-height: 57px; padding: 9px 10px; border: 0; border-radius: 10px; background: transparent; color: var(--ink); text-align: left; cursor: pointer; }
+.score-menu-backdrop { position: fixed; inset: 0; z-index: 90; border: 0; background: rgba(9,27,22,.55); backdrop-filter: blur(3px); cursor: default; }
+.score-header-menu { width: min(100%, 560px); max-height: calc(100dvh - env(safe-area-inset-top)); overflow-y: auto; position: fixed; z-index: 91; right: auto; bottom: 0; left: 50%; transform: translateX(-50%); padding: 10px 22px calc(28px + env(safe-area-inset-bottom)); border: 0; border-radius: 24px 24px 0 0; background: var(--paper); box-shadow: 0 -20px 50px rgba(10,30,23,.24); animation: sheet-up .25s ease-out; }
+.score-action-sheet-title { min-height: 45px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); }
+.score-action-sheet-title > span { color: #66736c; font: 800 9px/1 "Manrope"; letter-spacing: 1.1px; }
+.score-action-sheet-title > button { width: 34px; height: 34px; border: 0; border-radius: 50%; background: var(--cream); color: var(--ink); font-size: 20px; cursor: pointer; }
+.score-header-menu > button { width: 100%; min-height: 64px; padding: 10px 4px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; color: var(--ink); text-align: left; cursor: pointer; }
+.score-header-menu > button:last-child { border-bottom: 0; }
 .score-header-menu > button:hover { background: #f5f6f1; }
 .score-header-menu strong, .score-header-menu small { display: block; }
 .score-header-menu strong { font-size: 11px; }
@@ -98,7 +101,7 @@ h1, h2 { font-family: "Manrope"; letter-spacing: -.8px; }
 .section-heading h2 { font-size: 19px; margin-top: 5px; }
 .text-button { gap: 5px; color: var(--green-deep); background: transparent; border: 0; padding: 6px 0; font-size: 12px; font-weight: 700; cursor: pointer; }
 .action-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 11px; }
-.action-card { min-height: 156px; padding: 17px; border: 0; border-radius: 19px; color: white; text-align: left; display: flex; flex-direction: column; align-items: flex-start; cursor: pointer; transition: transform .2s ease; }
+.action-card { min-height: 176px; padding: 17px; border: 0; border-radius: 19px; color: white; text-align: left; display: flex; flex-direction: column; align-items: flex-start; cursor: pointer; transition: transform .2s ease; }
 .action-card:hover { transform: translateY(-2px); }
 .green-card { background: #537f22; }
 .navy-card { background: var(--navy); }
@@ -106,16 +109,13 @@ h1, h2 { font-family: "Manrope"; letter-spacing: -.8px; }
 .action-copy { margin-top: 18px; }
 .action-copy strong { display: block; font: 700 15px/1.2 "Manrope"; }
 .action-copy small { display: block; font-size: 11px; opacity: .7; margin-top: 5px; }
-.round-arrow { align-self: flex-end; margin-top: -25px; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: rgba(255,255,255,.13); }
+.round-arrow { align-self: flex-end; margin-top: auto; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: rgba(255,255,255,.13); }
 .club-list { border: 1px solid var(--line); border-radius: 18px; overflow: hidden; background: white; }
 .club-row { width: 100%; min-height: 82px; display: flex; align-items: center; gap: 12px; padding: 13px; border: 0; border-bottom: 1px solid var(--line); background: white; text-align: left; color: var(--ink); cursor: pointer; }
 .club-row:last-child { border-bottom: 0; }
 .club-copy { min-width: 0; flex: 1; }
 .club-copy strong { display: block; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .club-copy small { gap: 3px; color: var(--muted); margin-top: 5px; font-size: 10px; }
-.club-record { text-align: center; border-left: 1px solid var(--line); padding-left: 12px; }
-.club-record strong { display: block; font: 800 16px/1 "Manrope"; }
-.club-record small { font: 700 8px/1 "Manrope"; color: var(--muted); letter-spacing: 1px; }
 .result-card { min-height: 88px; border-top: 1px solid var(--line); display: flex; align-items: center; gap: 12px; padding: 13px 2px; }
 .home-result { width: 100%; border-right: 0; border-bottom: 0; border-left: 0; background: transparent; color: var(--ink); text-align: left; cursor: pointer; }
 .home-empty-match { min-height: 130px; display: flex; align-items: center; gap: 16px; padding: 22px; border: 1px dashed #cdd1c9; border-radius: 20px; }
@@ -143,7 +143,9 @@ h1, h2 { font-family: "Manrope"; letter-spacing: -.8px; }
 .feature-top { display: flex; align-items: center; gap: 14px; }
 .feature-top h2 { font-size: 18px; margin: 5px 0; color: white; }
 .feature-top p { display: flex; align-items: center; gap: 4px; color: rgba(255,255,255,.6); font-size: 11px; }
-.club-metrics, .stats-banner { display: grid; grid-template-columns: repeat(3,1fr); margin: 20px 0; border-block: 1px solid rgba(255,255,255,.13); padding: 16px 0; }
+.club-metrics, .stats-banner { display: grid; margin: 20px 0; border-block: 1px solid rgba(255,255,255,.13); padding: 16px 0; }
+.club-metrics { grid-template-columns: repeat(2,1fr); }
+.stats-banner { grid-template-columns: repeat(3,1fr); }
 .club-metrics div, .stats-banner div { text-align: center; border-right: 1px solid rgba(255,255,255,.13); }
 .club-metrics div:last-child, .stats-banner div:last-child { border: 0; }
 .club-metrics strong, .stats-banner strong { display: block; font: 800 20px/1 "Manrope"; }
@@ -216,11 +218,34 @@ h1, h2 { font-family: "Manrope"; letter-spacing: -.8px; }
 .club-detail-title .avatar { width: 58px; height: 58px; border-radius: 18px; font-size: 16px; }
 .club-detail-title h2 { font-size: 20px; margin: 5px 0; }
 .club-detail-title p { display: flex; align-items: center; gap: 4px; color: rgba(255,255,255,.56); font-size: 10px; }
-.club-tabs { display: grid; grid-template-columns: repeat(4,1fr); margin: 20px 0 0; border-bottom: 1px solid var(--line); }
+.club-tabs { position: sticky; top: -27px; z-index: 12; display: grid; grid-template-columns: repeat(4,1fr); margin: 20px 0 0; border-bottom: 1px solid var(--line); background: var(--paper); }
 .club-tabs button { min-height: 46px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); font-size: 10px; font-weight: 700; text-transform: capitalize; cursor: pointer; }
 .club-tabs button.active { color: var(--ink); border-bottom-color: #76a739; }
 .club-tab-content { padding-top: 24px; animation: auth-in .22s ease-out; }
 .detail-section { margin-bottom: 27px; }
+.club-members-section { padding-top: 2px; }
+.club-member-list { margin-top: 13px; border: 1px solid var(--line); border-radius: 17px; overflow: hidden; background: white; }
+.member-empty { padding: 22px 14px; color: var(--muted); font-size: 9px; text-align: center; }
+.club-member-row { min-height: 76px; padding: 11px 12px; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; border-bottom: 1px solid var(--line); }
+.club-member-row:last-child { border-bottom: 0; }
+.club-member-row .avatar { width: 42px; height: 42px; border-radius: 13px; font-size: 10px; }
+.club-member-row > span { min-width: 0; }
+.club-member-row > span strong, .club-member-row > span small { display: block; }
+.club-member-row > span strong { overflow: hidden; color: var(--ink); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.club-member-row > span small { margin-top: 4px; color: var(--muted); font-size: 8px; }
+.club-member-row > b { padding: 6px 8px; border-radius: 99px; background: #edf3e5; color: #567a2d; font: 800 7px/1 "Manrope"; letter-spacing: .5px; text-transform: uppercase; }
+.club-member-row select { width: 108px; height: 38px; padding: 0 9px; border: 1px solid var(--line); border-radius: 10px; background: #fbfbf7; color: var(--ink); font: 700 9px/1 "DM Sans"; text-transform: capitalize; }
+.member-remove-button { grid-column: 2 / -1; justify-self: end; margin-top: -5px; padding: 4px 0; border: 0; background: transparent; color: #a7462a; font-size: 8px; font-weight: 700; cursor: pointer; }
+.member-remove-button:disabled, .club-member-row select:disabled { opacity: .55; cursor: wait; }
+.pending-member-list { margin-top: 12px; padding: 12px; border-radius: 15px; background: #f4f4ee; }
+.pending-member-list > span { display: block; margin-bottom: 5px; color: var(--muted); font: 800 8px/1 "Manrope"; letter-spacing: 1px; }
+.pending-member-list > div { min-height: 46px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid #dedfd8; }
+.pending-member-list > div:last-child { border-bottom: 0; }
+.pending-member-list > div > span { min-width: 0; flex: 1; }
+.pending-member-list strong, .pending-member-list small { display: block; }
+.pending-member-list strong { overflow: hidden; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.pending-member-list small { margin-top: 3px; color: var(--muted); font-size: 8px; text-transform: capitalize; }
+.pending-member-list b { color: #72806e; font: 800 7px/1 "Manrope"; letter-spacing: .7px; text-transform: uppercase; }
 .snapshot-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .snapshot-grid > div { min-height: 115px; padding: 14px; border: 1px solid var(--line); border-radius: 16px; }
 .snapshot-icon { width: 33px; height: 33px; display: grid; place-items: center; border-radius: 10px; margin-bottom: 12px; }
@@ -362,6 +387,12 @@ h1, h2 { font-family: "Manrope"; letter-spacing: -.8px; }
 .setup-footer-buttons { display: flex; gap: 9px; margin-top: 20px; }
 .setup-footer-buttons .setup-primary { flex: 1; }
 .rules-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+.wicket-limit-grid { margin-top: 18px; }
+.match-scorer-field { display: block; margin-top: 18px; padding: 14px; border: 1px solid var(--line); border-radius: 14px; background: #f7f8f3; }
+.match-scorer-field > span, .match-scorer-field > small { display: block; }
+.match-scorer-field > span { margin-bottom: 7px; font-size: 9px; font-weight: 700; }
+.match-scorer-field select { width: 100%; height: 48px; padding: 0 12px; border: 1px solid #d5d8d1; border-radius: 12px; background: white; color: var(--ink); font: 500 11px/1 "DM Sans"; }
+.match-scorer-field > small { margin-top: 8px; color: var(--muted); font-size: 8px; line-height: 1.45; }
 .number-field { padding: 12px; border: 1px solid var(--line); border-radius: 14px; }
 .number-field input { height: 40px; font: 800 16px/1 "Manrope"; background: white; }
 .toggle-row { width: 100%; min-height: 66px; padding: 11px 13px; border: 0; border-bottom: 1px solid var(--line); background: white; color: var(--ink); display: flex; align-items: center; text-align: left; cursor: pointer; }
@@ -377,6 +408,15 @@ h1, h2 { font-family: "Manrope"; letter-spacing: -.8px; }
 .method-tabs button { min-height: 42px; border: 0; border-radius: 10px; background: transparent; color: var(--muted); font-size: 10px; font-weight: 700; cursor: pointer; }
 .method-tabs button.active { background: white; color: var(--ink); box-shadow: 0 2px 7px rgba(20,40,30,.08); }
 .method-tabs button:disabled { cursor: wait; }
+.toss-team-list { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-bottom: 14px; }
+.toss-team-list > div { min-width: 0; position: relative; padding: 13px; border: 1px solid var(--line); border-radius: 14px; background: white; }
+.toss-team-list > div.winner { border-color: #8bb45b; background: #f1f8e8; }
+.toss-team-list span, .toss-team-list strong, .toss-team-list small { display: block; }
+.toss-team-list span { color: #718078; font: 800 8px/1 "Manrope"; letter-spacing: 1px; }
+.toss-team-list strong { margin-top: 6px; font: 700 12px/1.2 "Manrope"; }
+.toss-team-list small { margin-top: 4px; color: var(--muted); font-size: 8px; }
+.toss-team-list p { margin-top: 9px; color: #68736d; font-size: 8px; line-height: 1.45; }
+.toss-team-list b { display: inline-block; margin-top: 9px; padding: 5px 7px; border-radius: 99px; background: #dceec8; color: #4f7726; font: 800 7px/1 "Manrope"; letter-spacing: .7px; }
 .toss-button { width: 100%; min-height: 125px; border: 1px dashed #aac48d; border-radius: 18px; background: #f4f9ee; color: var(--ink); display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; }
 .toss-button .toss-coin { width: 46px; height: 46px; display: grid; place-items: center; margin-bottom: 8px; border-radius: 50%; background: var(--green); font: 800 11px/1 "Manrope"; position: relative; transform-style: preserve-3d; box-shadow: inset 0 0 0 3px rgba(18,45,41,.12), 0 5px 12px rgba(52,85,23,.18); }
 .toss-coin i { position: absolute; inset: 0; display: grid; place-items: center; border-radius: 50%; backface-visibility: hidden; font-style: normal; }
@@ -442,8 +482,7 @@ h1, h2 { font-family: "Manrope"; letter-spacing: -.8px; }
 .matches-database-list { display: grid; gap: 11px; margin-top: 19px; }
 .database-match-card { width: 100%; padding: 15px; border: 1px solid var(--line); border-radius: 18px; background: white; color: var(--ink); text-align: left; cursor: pointer; transition: transform .18s, box-shadow .18s; }
 .database-match-item { position: relative; }
-.database-match-item .database-match-card { padding-right: 75px; }
-.remove-match-card { position: absolute; right: 12px; bottom: 13px; min-height: 30px; padding: 0 8px; border: 0; border-radius: 8px; background: #f8e7e2; color: #a84629; font-size: 8px; font-weight: 800; cursor: pointer; }
+.database-match-item .database-match-card { padding-right: 15px; }
 .database-match-card:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
 .database-match-top, .database-match-footer { display: flex; align-items: center; justify-content: space-between; }
 .database-match-top small { color: var(--muted); font-size: 9px; }
@@ -473,6 +512,9 @@ h1, h2 { font-family: "Manrope"; letter-spacing: -.8px; }
 .launch-divider { display: flex; align-items: center; gap: 9px; margin: 19px 0 12px; color: #8a918d; font: 800 8px/1 "Manrope"; letter-spacing: 1px; }
 .launch-divider::before, .launch-divider::after { content: ""; height: 1px; background: var(--line); flex: 1; }
 .match-club-options { display: grid; gap: 8px; }
+.home-club-sheet { max-height: 78dvh; }
+.home-club-empty { margin-bottom: 0; }
+.home-club-empty .club-submit { margin-top: 16px; }
 .match-date { margin: 25px 0 10px; font: 800 10px/1 "Manrope"; letter-spacing: 1px; color: var(--muted); text-transform: uppercase; }
 .match-list-card { width: 100%; border: 1px solid var(--line); border-radius: 17px; padding: 15px; margin-bottom: 10px; background: white; color: var(--ink); text-align: left; }
 button.match-list-card { cursor: pointer; }
@@ -492,10 +534,11 @@ button.match-list-card { cursor: pointer; }
 .profile-hero span { font: 800 8px/1 "Manrope"; letter-spacing: 1px; padding: 6px 9px; border-radius: 99px; background: #e7f5d4; color: #527923; }
 .stats-banner { background: var(--navy); color: white; border-radius: 18px; border: 0; padding: 20px 5px; margin: 0; }
 .settings-list { margin-top: 10px; border-block: 1px solid var(--line); }
-.settings-list > div { min-height: 70px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--line); }
-.settings-list > div:last-child { border: 0; }
+.settings-list > div, .settings-list > button { width: 100%; min-height: 70px; display: flex; align-items: center; gap: 12px; border: 0; border-bottom: 1px solid var(--line); background: transparent; color: var(--ink); text-align: left; }
+.settings-list > div:last-child, .settings-list > button:last-child { border: 0; }
+.settings-list > button { cursor: pointer; }
 .setting-icon { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 12px; background: var(--cream); }
-.settings-list div > span:nth-child(2) { flex: 1; }
+.settings-list > div > span:nth-child(2), .settings-list > button > span:nth-child(2) { flex: 1; }
 .settings-list strong, .settings-list small { display: block; }
 .settings-list strong { font-size: 13px; }
 .settings-list small { color: var(--muted); font-size: 10px; margin-top: 4px; }
@@ -609,37 +652,45 @@ button.match-list-card { cursor: pointer; }
 .scorecard-timeline span { min-width: 45px; min-height: 45px; display: grid; place-items: center; border-radius: 10px; background: #eef2e8; font-size: 10px; }
 .scorecard-timeline span.wicket { background: #f5dfd8; color: #9d4025; }
 .scorecard-timeline b { display: block; color: var(--muted); font-size: 7px; }
-.live-scorecard-view, .ball-history-view { padding: 5px 14px 28px; }
-.live-scorecard-heading { padding: 17px 2px 13px; }
+.live-scorecard-view, .ball-history-view { padding: 4px 12px 24px; }
+.live-scorecard-heading { padding: 12px 2px 9px; }
 .live-scorecard-heading span { color: var(--muted); font: 800 8px/1 "Manrope"; letter-spacing: 1px; }
 .live-scorecard-heading h2 { margin-top: 5px; font-size: 16px; }
 .scorecard-team-tabs { padding: 4px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; border: 1px solid #dfe4d8; border-radius: 13px; background: #edf1e7; }
+.scorecard-innings-tabs { display: flex; }
+.scorecard-innings-tabs button { flex: 1; min-width: 0; }
 .scorecard-team-tabs button { min-height: 42px; padding: 0 8px; border: 0; border-radius: 10px; background: transparent; color: #52605a; font-size: 10px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
 .scorecard-team-tabs button.active { background: white; color: var(--ink); box-shadow: 0 2px 8px rgba(27,43,36,.08); }
-.detailed-scorecard { margin-top: 10px; padding: 15px 12px 18px; border: 1px solid var(--line); border-radius: 17px; background: white; }
-.detailed-scorecard > header { min-height: 43px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--line); }
-.detailed-scorecard > header > strong { font: 800 14px/1.2 "Manrope"; }
+.detailed-scorecard { margin-top: 8px; padding: 11px 10px 13px; border: 1px solid var(--line); border-radius: 15px; background: white; }
+.detailed-scorecard > header { min-height: 40px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--line); }
+.detailed-scorecard > header > span > strong { display: block; margin-top: 3px; font: 800 13px/1.2 "Manrope"; }
+.detailed-scorecard > header > span > small { color: var(--muted); font: 800 7px/1 "Manrope"; letter-spacing: .8px; }
 .detailed-scorecard > header > b { white-space: nowrap; font: 800 17px/1 "Manrope"; }
 .detailed-scorecard > header small { color: var(--muted); font-size: 10px; }
-.detailed-scorecard > h3 { margin: 20px 0 9px; font: 800 11px/1 "Manrope"; letter-spacing: .4px; }
+.detailed-scorecard > h3 { margin: 13px 0 7px; font: 800 10px/1 "Manrope"; letter-spacing: .4px; }
 .scorecard-table { width: 100%; overflow: hidden; }
 .scorecard-table-head, .scorecard-table-row { display: grid; align-items: center; column-gap: 4px; }
 .batting-table .scorecard-table-head, .batting-table .scorecard-table-row { grid-template-columns: minmax(96px, 2fr) repeat(5, minmax(24px, .5fr)); }
 .bowling-table .scorecard-table-head, .bowling-table .scorecard-table-row { grid-template-columns: minmax(104px, 2fr) repeat(4, minmax(30px, .58fr)); }
-.scorecard-table-head { min-height: 35px; color: #858e88; border-bottom: 1px solid var(--line); font-size: 8px; }
+.scorecard-table-head { min-height: 29px; color: #858e88; border-bottom: 1px solid var(--line); font-size: 8px; }
 .scorecard-table-head span:not(:first-child), .scorecard-table-row > span:not(:first-child) { text-align: right; }
-.scorecard-table-row { min-height: 57px; border-bottom: 1px solid #e7eae3; color: #33423c; font-size: 9px; }
+.scorecard-table-row { min-height: 45px; border-bottom: 1px solid #e7eae3; color: #33423c; font-size: 9px; }
 .scorecard-table-row:last-child { border-bottom: 0; }
 .scorecard-player { min-width: 0; padding-right: 5px; text-align: left !important; }
 .scorecard-player strong, .scorecard-player small { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .scorecard-player strong { color: var(--ink); font-size: 10px; }
-.scorecard-player small { margin-top: 4px; color: var(--muted); font-size: 8px; text-transform: capitalize; }
-.scorecard-extras { min-height: 54px; margin-top: 9px; padding: 8px 10px; display: flex; align-items: center; justify-content: space-between; gap: 10px; background: #f7f8f1; border-radius: 9px; }
+.scorecard-player small { margin-top: 3px; color: var(--muted); font-size: 8px; text-transform: capitalize; }
+.yet-to-bat { margin-top: 8px; }
+.yet-to-bat > strong { display: block; margin-bottom: 6px; color: var(--muted); font-size: 8px; text-transform: uppercase; letter-spacing: .6px; }
+.yet-to-bat > div { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 3px; }
+.yet-to-bat span { flex: 0 0 auto; padding: 7px 9px; border-radius: 99px; background: #eef1e9; color: #5d6963; font-size: 8px; font-weight: 700; }
+.scorecard-extras { min-height: 44px; margin-top: 8px; padding: 7px 9px; display: flex; align-items: center; justify-content: space-between; gap: 10px; background: #f7f8f1; border-radius: 9px; }
 .scorecard-extras span { min-width: 0; }
 .scorecard-extras strong, .scorecard-extras small { display: block; }
 .scorecard-extras strong { font-size: 10px; }
 .scorecard-extras small { margin-top: 4px; color: var(--muted); font-size: 8px; }
 .scorecard-extras > b { font: 800 13px/1 "Manrope"; }
+.scorecard-no-bowling { padding: 12px 0 2px; color: var(--muted); font-size: 9px; }
 .score-tab-empty { margin-top: 18px; padding: 34px 18px; border: 1px dashed #cfd4ca; border-radius: 16px; background: white; text-align: center; }
 .score-tab-empty strong { font: 700 13px/1.2 "Manrope"; }
 .score-tab-empty p { margin-top: 6px; color: var(--muted); font-size: 10px; }
@@ -685,6 +736,22 @@ button.match-list-card { cursor: pointer; }
 .profile-invitations small { margin-top: 3px; color: var(--muted); font-size: 9px; text-transform: capitalize; }
 .profile-invitations button { min-height: 40px; padding: 0 10px; border: 1px solid var(--line); border-radius: 10px; background: white; font-size: 9px; font-weight: 700; }
 .profile-invitations button.accept { border-color: var(--green); background: var(--green); color: var(--navy); }
+.invitations-intro { display: flex; align-items: flex-start; gap: 13px; padding: 6px 0 22px; border-bottom: 1px solid var(--line); }
+.invitations-intro .setting-icon { flex: 0 0 auto; width: 46px; height: 46px; background: #e7f3d9; color: #547b2a; }
+.invitations-intro h2 { margin-top: 7px; font-size: 22px; }
+.invitations-intro p { margin-top: 5px; color: var(--muted); font-size: 10px; line-height: 1.45; }
+.invitation-list { display: grid; gap: 11px; padding-top: 20px; }
+.invitation-card { display: grid; grid-template-columns: auto 1fr; gap: 12px; padding: 15px; border: 1px solid var(--line); border-radius: 17px; background: white; }
+.invitation-card .avatar { width: 46px; height: 46px; border-radius: 14px; font-size: 11px; }
+.invitation-copy { min-width: 0; }
+.invitation-copy h3 { margin-top: 5px; font-size: 15px; }
+.invitation-copy p { margin-top: 4px; color: var(--muted); font-size: 9px; }
+.invitation-copy .eyebrow { text-transform: uppercase; }
+.invitation-actions { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding-top: 3px; }
+.invitation-actions button { min-height: 43px; border: 1px solid var(--line); border-radius: 11px; background: white; color: var(--ink); font-size: 10px; font-weight: 700; cursor: pointer; }
+.invitation-actions button.accept { border-color: var(--green); background: var(--green); color: var(--navy); }
+.invitation-actions button:disabled { opacity: .6; cursor: wait; }
+.invitations-empty { min-height: 300px; }
 .timeline-sheet { max-height: 82vh; overflow: hidden; }
 .correction-list { max-height: 52vh; overflow-y: auto; margin-top: 13px; }
 .correction-list > div { min-height: 55px; display: flex; align-items: center; gap: 7px; padding: 8px 0; border-bottom: 1px solid var(--line); }
@@ -721,6 +788,10 @@ button.match-list-card { cursor: pointer; }
 .score-primary-action.danger { background: #a7472a; margin-top: 17px; }
 .score-primary-action:disabled { opacity: .5; cursor: not-allowed; }
 .score-sheet-kicker { display: block; color: #668b37; font: 800 8px/1 "Manrope"; letter-spacing: 1px; margin-bottom: 6px; }
+.score-view-only { margin: 17px; padding: 22px 18px; border: 1px solid #dbe2d3; border-radius: 16px; background: #f6faef; text-align: center; }
+.score-view-only strong { display: block; font: 700 13px/1.25 "Manrope"; }
+.score-view-only p { margin-top: 6px; color: var(--muted); font-size: 9px; line-height: 1.5; }
+.innings-view-only { margin-top: 24px; }
 .score-player-choices { display: grid; gap: 7px; margin-top: 16px; }
 .score-player-choices button { min-height: 58px; padding: 8px 11px; display: flex; align-items: center; gap: 10px; border: 1px solid var(--line); border-radius: 13px; background: white; color: var(--ink); text-align: left; cursor: pointer; }
 .score-player-choices button > span { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 11px; background: #e9f3dd; color: #54792d; font: 800 9px/1 "Manrope"; }

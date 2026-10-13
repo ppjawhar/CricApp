@@ -97,6 +97,17 @@ export type CricketMatch = {
   version?: number;
   score?: MatchScoreState;
   scoringOwnerId?: string;
+  permissions?: { canScore: boolean; canManageScorer: boolean };
+  scorer?: {
+    userId: string;
+    email?: string;
+    role: "admin" | "organizer" | "member";
+  };
+  scorerOptions?: Array<{
+    userId: string;
+    email?: string;
+    role: "admin" | "organizer" | "member";
+  }>;
   corrections?: Array<{ id: string; deliveryId: string; original: unknown; replacement: unknown; actorId: string; createdAt: string }>;
 };
 
@@ -161,6 +172,17 @@ export async function updateMatchStatus(matchId: string, status: "paused" | "aba
   const result = await request(`/matches/${matchId}/status`, {
     method: "PUT",
     body: JSON.stringify({ status }),
+  });
+  return result.match as CricketMatch;
+}
+
+export async function changeMatchScorer(
+  matchId: string,
+  scorerId: string,
+): Promise<CricketMatch> {
+  const result = await request(`/matches/${matchId}/scorer`, {
+    method: "PUT",
+    body: JSON.stringify({ scorerId }),
   });
   return result.match as CricketMatch;
 }

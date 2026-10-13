@@ -15,9 +15,17 @@ export type ClubInvitation = {
   clubId: string;
   clubName: string;
   email: string;
-  role: "organizer" | "scorer" | "member";
+  role: "admin" | "organizer" | "member";
   status: "pending" | "accepted" | "declined";
   createdAt: string;
+};
+
+export type ClubMember = {
+  userId: string;
+  email?: string;
+  role: "admin" | "organizer" | "member";
+  joinedAt: string;
+  isCreator: boolean;
 };
 
 export type Club = {
@@ -49,6 +57,8 @@ export type Club = {
   }>;
   recentMatches?: import("./matchesApi").CricketMatch[];
   players: ClubPlayer[];
+  members?: ClubMember[];
+  pendingInvitations?: ClubInvitation[];
   membership?: { role: "admin" | "organizer" | "scorer" | "member" };
   joined?: boolean;
 };
@@ -75,7 +85,7 @@ async function request(path: string, options?: RequestInit) {
       result = JSON.parse(responseText);
     } catch {
       if (response.status === 404) {
-        throw new Error("The club service is not deployed yet. Redeploy the latest Edge Function from Make settings.");
+        throw new Error("The club service is not deployed yet. Redeploy the latest Supabase Edge Function.");
       }
       throw new Error(`The club service returned an invalid response (${response.status}).`);
     }
@@ -144,4 +154,22 @@ export async function listInvitations(): Promise<ClubInvitation[]> {
 
 export async function respondToInvitation(invitationId: string, decision: "accept" | "decline"): Promise<void> {
   await request(`/invitations/${invitationId}/respond`, { method: "POST", body: JSON.stringify({ decision }) });
+}
+
+export async function updateClubMemberRole(
+  clubId: string,
+  memberId: string,
+  role: ClubMember["role"],
+): Promise<void> {
+  await request(`/clubs/${clubId}/members/${memberId}`, {
+    method: "PUT",
+    body: JSON.stringify({ role }),
+  });
+}
+
+export async function removeClubMember(
+  clubId: string,
+  memberId: string,
+): Promise<void> {
+  await request(`/clubs/${clubId}/members/${memberId}`, { method: "DELETE" });
 }

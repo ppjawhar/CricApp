@@ -8,11 +8,14 @@ import {
   inviteClubMember,
   listClubs,
   listInvitations,
+  removeClubMember,
   respondToInvitation,
   updateClub,
+  updateClubMemberRole,
   updateClubPlayer,
   type Club,
   type ClubInvitation,
+  type ClubMember,
   type ClubPlayer,
 } from "./lib/clubsApi";
 import { deleteMatch, listMatches, type CricketMatch } from "./lib/matchesApi";
@@ -92,7 +95,9 @@ const iconPaths: Record<IconName, React.ReactNode> = {
   sync: (
     <>
       <path d="M20 7h-5V2" />
-      <path d="M20 7a8 8 0 1 0 1 8" />
+      <path d="M20 7A8 8 0 0 0 5.1 5" />
+      <path d="M4 17h5v5" />
+      <path d="M4 17a8 8 0 0 0 14.9 2" />
     </>
   ),
   plus: <path d="M12 5v14M5 12h14" />,
@@ -249,6 +254,10 @@ export default function App() {
 function AuthenticatedApp() {
   const { user, signOut } = useAuth();
   const [tab, setTab] = useState<Tab>("Home");
+  const [clubToOpen, setClubToOpen] = useState<Club | null>(null);
+  const [profileDestination, setProfileDestination] = useState<
+    "profile" | "invitations"
+  >("profile");
   const [keyboardOpen, setKeyboardOpen] = useState(false);
   const [scoring, setScoring] = useState(false);
   const [setupEntry, setSetupEntry] = useState<"quick" | "club" | null>(null);
@@ -319,8 +328,13 @@ function AuthenticatedApp() {
     setSetupEntry("quick");
   }
 
-  function startClubMatch(club: Club) {
-    setSetupClub(club);
+  async function startClubMatch(club: Club) {
+    if (!["admin", "organizer"].includes(club.membership?.role || "")) return;
+    try {
+      setSetupClub(await getClub(club.id));
+    } catch {
+      setSetupClub(club);
+    }
     setSetupTemplate(undefined);
     setSetupEntry("club");
   }
@@ -384,11 +398,25 @@ function AuthenticatedApp() {
             setScoring(true);
           }}
           onQuick={startQuick}
-          onClub={() => setTab("Clubs")}
+          onStartClub={startClubMatch}
+          onOpenClub={(club) => {
+            setClubToOpen(club);
+            setTab("Clubs");
+          }}
+          onClubs={() => {
+            setClubToOpen(null);
+            setTab("Clubs");
+          }}
+          onInvitations={() => {
+            setProfileDestination("invitations");
+            setTab("Profile");
+          }}
           onMatches={() => setTab("Matches")}
         />
       )}
-      {tab === "Clubs" && <Clubs onStart={startClubMatch} />}
+      {tab === "Clubs" && (
+        <Clubs onStart={startClubMatch} initialClub={clubToOpen} />
+      )}
       {tab === "Matches" && (
         <Matches
           onResume={(match) => {
@@ -405,6 +433,7 @@ function AuthenticatedApp() {
           name={user.user_metadata.full_name || "CricApp Player"}
           email={user.email || ""}
           onSignOut={signOut}
+          initialView={profileDestination}
         />
       )}
 
@@ -414,7 +443,11 @@ function AuthenticatedApp() {
             <Button
               key={item}
               className={`nav-item ${tab === item ? "active" : ""}`}
-              onClick={() => setTab(item)}
+              onClick={() => {
+                setClubToOpen(null);
+                if (item === "Profile") setProfileDestination("profile");
+                setTab(item);
+              }}
             >
               <span className="nav-icon">
                 <Icon
@@ -449,16 +482,26 @@ function getInitials(name?: string, email?: string) {
 function Home({
   onResume,
   onQuick,
-  onClub,
+  onStartClub,
+  onOpenClub,
+  onClubs,
+  onInvitations,
   onMatches,
 }: {
   onResume: (match: CricketMatch) => void;
   onQuick: () => void;
-  onClub: () => void;
+  onStartClub: (club: Club) => void;
+  onOpenClub: (club: Club) => void;
+  onClubs: () => void;
+  onInvitations: () => void;
   onMatches: () => void;
 }) {
   const [matches, setMatches] = useState<CricketMatch[]>([]);
   const [clubs, setClubs] = useState<Club[]>([]);
+  const [choosingClub, setChoosingClub] = useState(false);
+  const authorizedClubs = clubs.filter((club) =>
+    ["admin", "organizer"].includes(club.membership?.role || ""),
+  );
 
   useEffect(() => {
     Promise.all([listMatches(), listClubs()])
@@ -494,7 +537,11 @@ function Home({
       <PageHeader
         home
         action={
-          <Button className="icon-button" ariaLabel="Notifications">
+          <Button
+            className="icon-button"
+            ariaLabel="Open invitations"
+            onClick={onInvitations}
+          >
             <Icon name="bell" />
           </Button>
         }
@@ -553,7 +600,9 @@ function Home({
                   className="primary-button light-button"
                   onClick={() => onResume(activeMatch)}
                 >
-                  Resume scoring <Icon name="arrow" />
+                  {activeMatch.permissions?.canScore
+                    ? "Resume scoring"
+                    : "View live score"} <Icon name="arrow" />
                 </Button>
               </div>
             </div>
@@ -590,7 +639,10 @@ function Home({
                 <Icon name="arrow" size={18} />
               </span>
             </Button>
-            <Button className="action-card navy-card" onClick={onClub}>
+            <Button
+              className="action-card navy-card"
+              onClick={() => setChoosingClub(true)}
+            >
               <span className="action-icon">
                 <Icon name="shield" size={25} />
               </span>
@@ -611,13 +663,17 @@ function Home({
               <span className="eyebrow">YOUR CLUBS</span>
               <h2>Pick up with your team</h2>
             </div>
-            <Button className="text-button" onClick={onClub}>
+            <Button className="text-button" onClick={onClubs}>
               View all <Icon name="arrow" size={16} />
             </Button>
           </div>
           <div className="club-list">
             {clubs.slice(0, 3).map((club, index) => (
-              <Button className="club-row" key={club.id} onClick={onClub}>
+              <Button
+                className="club-row"
+                key={club.id}
+                onClick={() => onOpenClub(club)}
+              >
                 <Avatar
                   initials={club.initials}
                   tone={index % 2 ? "cream" : "dark"}
@@ -629,12 +685,6 @@ function Home({
                     {club.location || "Location not added"} ·{" "}
                     {club.players.length} players
                   </small>
-                </span>
-                <span className="club-record">
-                  <strong>
-                    {club.record.wins}–{club.record.losses}
-                  </strong>
-                  <small>EXTERNAL</small>
                 </span>
                 <Icon name="chevron" />
               </Button>
@@ -650,67 +700,89 @@ function Home({
             )}
           </div>
         </section>
-
-        <section className="section-block recent-section">
-          <div className="section-heading">
-            <div>
-              <span className="eyebrow">RECENT</span>
-              <h2>Last matches</h2>
-            </div>
-            <Button className="text-button" onClick={onMatches}>
-              Match history <Icon name="arrow" size={16} />
-            </Button>
-          </div>
-          {completed.map((match) => (
-            <button
-              type="button"
-              className="result-card home-result"
-              key={match.id}
-              onClick={onMatches}
-            >
-              <span
-                className={`result-badge ${match.status === "abandoned" ? "quick" : "win"}`}
-              >
-                {match.status === "abandoned" ? "ABD" : "FINAL"}
-              </span>
-              <div className="result-copy">
-                <strong>
-                  {match.teams[0].name}
-                  <span>
-                    {match.score?.innings[0]
-                      ? `${match.score.innings[0].runs}/${match.score.innings[0].wickets}`
-                      : "—"}
-                  </span>
-                </strong>
-                <p>{match.score?.result || "Match abandoned"}</p>
-                <small>
-                  {new Date(
-                    match.completedAt || match.updatedAt || match.createdAt,
-                  ).toLocaleDateString()}{" "}
-                  · {match.mode.replaceAll("-", " ")}
-                </small>
-              </div>
-              <Icon name="chevron" />
-            </button>
-          ))}
-          {!completed.length && (
-            <div className="empty-note">
-              <div>
-                <strong>No completed matches</strong>
-                <p>Completed scorecards will appear here.</p>
-              </div>
-            </div>
-          )}
-        </section>
       </div>
+
+      {choosingClub && (
+        <div
+          className="sheet-backdrop"
+          onMouseDown={() => setChoosingClub(false)}
+        >
+          <div
+            className="player-sheet home-club-sheet"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="sheet-handle" />
+            <div className="sheet-title">
+              <div>
+                <span className="eyebrow">CLUB MATCH</span>
+                <h2>Select a club</h2>
+              </div>
+              <Button
+                className="sheet-close"
+                onClick={() => setChoosingClub(false)}
+                ariaLabel="Close club selection"
+              >
+                ×
+              </Button>
+            </div>
+            {authorizedClubs.length ? (
+              <div className="match-club-options">
+                {authorizedClubs.map((club) => (
+                  <button
+                    type="button"
+                    key={club.id}
+                    className="match-launch-card"
+                    onClick={() => {
+                      setChoosingClub(false);
+                      onStartClub(club);
+                    }}
+                  >
+                    <Avatar initials={club.initials} tone="green" />
+                    <span>
+                      <strong>{club.name}</strong>
+                      <small>
+                        {club.players.length} players · Internal or external
+                        match
+                      </small>
+                    </span>
+                    <Icon name="arrow" />
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="setup-empty home-club-empty">
+                <strong>No authorized clubs</strong>
+                <p>Only club admins and organizers can create club matches.</p>
+                <Button
+                  className="club-submit"
+                  onClick={() => {
+                    setChoosingClub(false);
+                    onClubs();
+                  }}
+                >
+                  Go to clubs <span>→</span>
+                </Button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </>
   );
 }
 
-function Clubs({ onStart }: { onStart: (club: Club) => void }) {
-  const [view, setView] = useState<"list" | "create" | "detail">("list");
+function Clubs({
+  onStart,
+  initialClub,
+}: {
+  onStart: (club: Club) => void;
+  initialClub?: Club | null;
+}) {
+  const [view, setView] = useState<"list" | "create" | "detail">(
+    initialClub ? "detail" : "list",
+  );
   const [myClubs, setMyClubs] = useState<Club[]>([]);
-  const [selectedClub, setSelectedClub] = useState<Club | null>(null);
+  const [selectedClub, setSelectedClub] = useState<Club | null>(initialClub ?? null);
   const [detailTab, setDetailTab] = useState<
     "overview" | "roster" | "matches" | "stats"
   >("overview");
@@ -728,7 +800,7 @@ function Clubs({ onStart }: { onStart: (club: Club) => void }) {
   const [deleteConfirm, setDeleteConfirm] = useState("");
   const [playerName, setPlayerName] = useState("");
   const [playerNickname, setPlayerNickname] = useState("");
-  const [playerRole, setPlayerRole] = useState("all-rounder");
+  const [playerRole, setPlayerRole] = useState("club-player");
   const [playerStatus, setPlayerStatus] = useState<"active" | "archived">(
     "active",
   );
@@ -750,6 +822,24 @@ function Clubs({ onStart }: { onStart: (club: Club) => void }) {
       active = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!initialClub) return;
+    let active = true;
+    setSelectedClub(initialClub);
+    setView("detail");
+    setDetailTab("overview");
+    setError("");
+    getClub(initialClub.id)
+      .then((club) => active && setSelectedClub(club))
+      .catch((reason) =>
+        active &&
+        setError(reason instanceof Error ? reason.message : "Unable to load club"),
+      );
+    return () => {
+      active = false;
+    };
+  }, [initialClub?.id]);
 
   async function openClub(club: Club) {
     setSelectedClub(club);
@@ -813,7 +903,7 @@ function Clubs({ onStart }: { onStart: (club: Club) => void }) {
       );
       setPlayerName("");
       setPlayerNickname("");
-      setPlayerRole("all-rounder");
+      setPlayerRole("club-player");
       setPlayerStatus("active");
       setEditingPlayer(null);
       setAddingPlayer(false);
@@ -829,7 +919,7 @@ function Clubs({ onStart }: { onStart: (club: Club) => void }) {
   function openAddPlayer() {
     setPlayerName("");
     setPlayerNickname("");
-    setPlayerRole("all-rounder");
+    setPlayerRole("club-player");
     setPlayerStatus("active");
     setEditingPlayer(null);
     setError("");
@@ -839,7 +929,7 @@ function Clubs({ onStart }: { onStart: (club: Club) => void }) {
   function openEditPlayer(player: ClubPlayer) {
     setPlayerName(player.name);
     setPlayerNickname(player.nickname || "");
-    setPlayerRole(player.role || "all-rounder");
+    setPlayerRole(player.role || "club-player");
     setPlayerStatus(player.status);
     setEditingPlayer(player);
     setError("");
@@ -907,12 +997,50 @@ function Clubs({ onStart }: { onStart: (club: Club) => void }) {
     setError("");
     try {
       await inviteClubMember(selectedClub.id, inviteEmail.trim(), inviteRole);
+      setSelectedClub(await getClub(selectedClub.id));
       setInviteEmail("");
       setInviteRole("member");
       setInviting(false);
     } catch (reason) {
       setError(
         reason instanceof Error ? reason.message : "Unable to send invitation",
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function changeMemberRole(
+    member: ClubMember,
+    role: ClubMember["role"],
+  ) {
+    if (!selectedClub || member.role === role) return;
+    setSaving(true);
+    setError("");
+    try {
+      await updateClubMemberRole(selectedClub.id, member.userId, role);
+      setSelectedClub(await getClub(selectedClub.id));
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : "Unable to update member",
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function removeMember(member: ClubMember) {
+    if (!selectedClub) return;
+    const label = member.email || "this member";
+    if (!window.confirm(`Remove ${label} from ${selectedClub.name}?`)) return;
+    setSaving(true);
+    setError("");
+    try {
+      await removeClubMember(selectedClub.id, member.userId);
+      setSelectedClub(await getClub(selectedClub.id));
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : "Unable to remove member",
       );
     } finally {
       setSaving(false);
@@ -1007,6 +1135,7 @@ function Clubs({ onStart }: { onStart: (club: Club) => void }) {
     const canEdit =
       selectedClub.membership?.role === "admin" ||
       selectedClub.membership?.role === "organizer";
+    const isAdmin = selectedClub.membership?.role === "admin";
     return (
       <>
         <PageHeader
@@ -1054,14 +1183,8 @@ function Clubs({ onStart }: { onStart: (club: Club) => void }) {
                 <strong>{selectedClub.matchCount}</strong>
                 <span>MATCHES</span>
               </div>
-              <div>
-                <strong>
-                  {selectedClub.record.wins}–{selectedClub.record.losses}
-                </strong>
-                <span>RECORD</span>
-              </div>
             </div>
-            {selectedClub.joined && (
+            {canEdit && (
               <Button
                 className="primary-button light-button wide"
                 onClick={() => onStart(selectedClub)}
@@ -1153,11 +1276,82 @@ function Clubs({ onStart }: { onStart: (club: Club) => void }) {
                   </span>
                   <div>
                     <strong>Invite a club member</strong>
-                    <p>Add organizers, scorers and members by email.</p>
+                    <p>Add members and organizers by email.</p>
                   </div>
                   <Icon name="chevron" />
                 </button>
               )}
+              <section className="detail-section club-members-section">
+                <div className="section-heading">
+                  <div>
+                    <span className="eyebrow">CLUB MEMBERS</span>
+                    <h2>{selectedClub.members?.length || 0} members</h2>
+                  </div>
+                </div>
+                <div className="club-member-list">
+                  {(selectedClub.members || []).map((member) => (
+                    <div className="club-member-row" key={member.userId}>
+                      <Avatar
+                        initials={getInitials(member.email || member.role)}
+                        tone="cream"
+                      />
+                      <span>
+                        <strong>{member.email || "Club member"}</strong>
+                        <small>
+                          Joined {new Date(member.joinedAt).toLocaleDateString()}
+                          {member.isCreator ? " · Club creator" : ""}
+                        </small>
+                      </span>
+                      {isAdmin ? (
+                        <select
+                          value={member.role}
+                          disabled={saving}
+                          onChange={(event) =>
+                            void changeMemberRole(
+                              member,
+                              event.target.value as ClubMember["role"],
+                            )
+                          }
+                          aria-label={`Role for ${member.email || "club member"}`}
+                        >
+                          <option value="member">Member</option>
+                          <option value="organizer">Organizer</option>
+                          <option value="admin">Admin</option>
+                        </select>
+                      ) : (
+                        <b>{member.role}</b>
+                      )}
+                      {isAdmin && !member.isCreator && (
+                        <button
+                          type="button"
+                          className="member-remove-button"
+                          onClick={() => void removeMember(member)}
+                          disabled={saving}
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                  {!selectedClub.members?.length && (
+                    <p className="member-empty">No invited members yet.</p>
+                  )}
+                </div>
+                {!!selectedClub.pendingInvitations?.length && (
+                  <div className="pending-member-list">
+                    <span className="eyebrow">PENDING</span>
+                    {selectedClub.pendingInvitations.map((invitation) => (
+                      <div key={invitation.id}>
+                        <span>
+                          <strong>{invitation.email}</strong>
+                          <small>Invited as {invitation.role}</small>
+                        </span>
+                        <b>Pending</b>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
             </div>
           )}
 
@@ -1277,7 +1471,7 @@ function Clubs({ onStart }: { onStart: (club: Club) => void }) {
                   </span>
                   <h3>No matches yet</h3>
                   <p>Club matches and completed scorecards will appear here.</p>
-                  {selectedClub.joined && (
+                  {canEdit && (
                     <Button
                       className="primary-button light-button"
                       onClick={() => onStart(selectedClub)}
@@ -1389,8 +1583,10 @@ function Clubs({ onStart }: { onStart: (club: Club) => void }) {
                     }
                   >
                     <option value="member">Member</option>
-                    <option value="scorer">Scorer</option>
                     <option value="organizer">Organizer</option>
+                    {selectedClub.membership?.role === "admin" && (
+                      <option value="admin">Admin</option>
+                    )}
                   </select>
                 </label>
                 {error && <div className="club-error">{error}</div>}
@@ -1456,6 +1652,7 @@ function Clubs({ onStart }: { onStart: (club: Club) => void }) {
                     value={playerRole}
                     onChange={(event) => setPlayerRole(event.target.value)}
                   >
+                    <option value="club-player">Club Player</option>
                     <option value="batter">Batter</option>
                     <option value="bowler">Bowler</option>
                     <option value="all-rounder">All-rounder</option>
@@ -1703,6 +1900,9 @@ function Matches({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [creating, setCreating] = useState(false);
+  const authorizedClubs = clubs.filter((club) =>
+    ["admin", "organizer"].includes(club.membership?.role || ""),
+  );
 
   useEffect(() => {
     let active = true;
@@ -1918,21 +2118,16 @@ function Matches({
                       </span>
                       <strong>
                         {canResume
-                          ? match.status === "ready"
-                            ? "Start scoring"
-                            : "Resume scoring"
+                          ? match.permissions?.canScore
+                            ? match.status === "ready"
+                              ? "Start scoring"
+                              : "Resume scoring"
+                            : "View live score"
                           : "View scorecard"}{" "}
                         <Icon name="arrow" size={15} />
                       </strong>
                     </div>
                   </Button>
-                  <button
-                    type="button"
-                    className="remove-match-card"
-                    onClick={() => removeMatch(match)}
-                  >
-                    Remove
-                  </button>
                 </div>
               );
             })}
@@ -1978,14 +2173,14 @@ function Matches({
               <div className="launch-divider">
                 <span>OR USE A CLUB</span>
               </div>
-              {clubs.length === 0 ? (
+              {authorizedClubs.length === 0 ? (
                 <div className="setup-empty">
                   <strong>No authorized clubs</strong>
                   <p>Create a club or ask an admin for organizer access.</p>
                 </div>
               ) : (
                 <div className="match-club-options">
-                  {clubs.map((club) => (
+                  {authorizedClubs.map((club) => (
                     <button
                       type="button"
                       key={club.id}
@@ -2228,10 +2423,12 @@ function Profile({
   name,
   email,
   onSignOut,
+  initialView = "profile",
 }: {
   name: string;
   email: string;
   onSignOut: () => Promise<void>;
+  initialView?: "profile" | "invitations";
 }) {
   const [summary, setSummary] = useState({
     matches: 0,
@@ -2239,6 +2436,11 @@ function Profile({
     clubs: 0,
   });
   const [invitations, setInvitations] = useState<ClubInvitation[]>([]);
+  const [showInvitations, setShowInvitations] = useState(
+    initialView === "invitations",
+  );
+  const [respondingInvitation, setRespondingInvitation] = useState("");
+  const [invitationError, setInvitationError] = useState("");
   const [online, setOnline] = useState(navigator.onLine);
   const [installReady, setInstallReady] = useState(
     Boolean(window.cricAppInstallPrompt),
@@ -2281,12 +2483,103 @@ function Profile({
     invitationId: string,
     decision: "accept" | "decline",
   ) {
-    await respondToInvitation(invitationId, decision);
-    setInvitations((current) =>
-      current.filter((invitation) => invitation.id !== invitationId),
+    setRespondingInvitation(invitationId);
+    setInvitationError("");
+    try {
+      await respondToInvitation(invitationId, decision);
+      setInvitations((current) =>
+        current.filter((invitation) => invitation.id !== invitationId),
+      );
+      if (decision === "accept")
+        setSummary((current) => ({ ...current, clubs: current.clubs + 1 }));
+    } catch (reason) {
+      setInvitationError(
+        reason instanceof Error
+          ? reason.message
+          : "Unable to update this invitation.",
+      );
+    } finally {
+      setRespondingInvitation("");
+    }
+  }
+
+  if (showInvitations) {
+    return (
+      <>
+        <PageHeader
+          title="Invitations"
+          eyebrow="CLUBS"
+          onBack={() => setShowInvitations(false)}
+          backLabel="Back to profile"
+        />
+        <div className="page invitations-page">
+          <section className="invitations-intro">
+            <span className="setting-icon">
+              <Icon name="bell" size={22} />
+            </span>
+            <div>
+              <span className="eyebrow">PENDING INVITATIONS</span>
+              <h2>
+                {invitations.length
+                  ? `${invitations.length} club invitation${invitations.length === 1 ? "" : "s"}`
+                  : "You’re all caught up"}
+              </h2>
+              <p>
+                Review invitations from clubs and choose whether to join.
+              </p>
+            </div>
+          </section>
+          {invitationError && <div className="club-error">{invitationError}</div>}
+          {invitations.length ? (
+            <section className="invitation-list">
+              {invitations.map((invitation) => {
+                const responding = respondingInvitation === invitation.id;
+                return (
+                  <article key={invitation.id} className="invitation-card">
+                    <Avatar
+                      initials={getInitials(invitation.clubName)}
+                      tone="dark"
+                    />
+                    <div className="invitation-copy">
+                      <span className="eyebrow">JOIN AS {invitation.role}</span>
+                      <h3>{invitation.clubName}</h3>
+                      <p>
+                        Invited {new Date(invitation.createdAt).toLocaleDateString()}
+                      </p>
+                    </div>
+                    <div className="invitation-actions">
+                      <button
+                        type="button"
+                        onClick={() => answerInvitation(invitation.id, "decline")}
+                        disabled={responding}
+                      >
+                        Decline
+                      </button>
+                      <button
+                        type="button"
+                        className="accept"
+                        onClick={() => answerInvitation(invitation.id, "accept")}
+                        disabled={responding}
+                      >
+                        {responding ? "Updating…" : "Accept"}
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
+            </section>
+          ) : (
+            <div className="full-empty invitations-empty">
+              <span className="empty-illustration">
+                <Icon name="bell" size={29} />
+              </span>
+              <h3>No new invitations</h3>
+              <p>New club invitations will appear on this page.</p>
+            </div>
+          )}
+        </div>
+      </>
     );
-    if (decision === "accept")
-      setSummary((current) => ({ ...current, clubs: current.clubs + 1 }));
   }
 
   return (
@@ -2315,48 +2608,14 @@ function Profile({
             <span>CLUBS</span>
           </div>
         </section>
-        {invitations.length > 0 && (
-          <section className="profile-invitations">
-            <span className="eyebrow">PENDING INVITATIONS</span>
-            {invitations.map((invitation) => (
-              <div key={invitation.id}>
-                <span>
-                  <strong>{invitation.clubName}</strong>
-                  <small>Join as {invitation.role}</small>
-                </span>
-                <button
-                  type="button"
-                  onClick={() => answerInvitation(invitation.id, "decline")}
-                >
-                  Decline
-                </button>
-                <button
-                  type="button"
-                  className="accept"
-                  onClick={() => answerInvitation(invitation.id, "accept")}
-                >
-                  Accept
-                </button>
-              </div>
-            ))}
-          </section>
-        )}
         <section className="section-block">
           <span className="eyebrow">ACCOUNT</span>
           <div className="settings-list">
-            <div>
-              <span className="setting-icon">
-                <Icon name="users" />
-              </span>
-              <span>
-                <strong>Club memberships</strong>
-                <small>
-                  {summary.clubs} active club{summary.clubs === 1 ? "" : "s"}
-                </small>
-              </span>
-              <Icon name="chevron" />
-            </div>
-            <div>
+            <button
+              type="button"
+              className="settings-item"
+              onClick={() => setShowInvitations(true)}
+            >
               <span className="setting-icon">
                 <Icon name="bell" />
               </span>
@@ -2365,7 +2624,7 @@ function Profile({
                 <small>{invitations.length} pending</small>
               </span>
               <Icon name="chevron" />
-            </div>
+            </button>
             <div>
               <span className="setting-icon">
                 <Icon name="sync" />

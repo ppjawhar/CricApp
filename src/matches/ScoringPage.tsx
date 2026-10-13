@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { deleteMatch, getMatch, saveMatchScore, updateMatchStatus, type CricketMatch, type DismissalType, type ExtraType, type MatchPlayer, type MatchScoreState, type MatchTeam, type ScoreDelivery } from "../lib/matchesApi";
+import { changeMatchScorer, deleteMatch, getMatch, saveMatchScore, updateMatchStatus, type CricketMatch, type DismissalType, type ExtraType, type MatchPlayer, type MatchScoreState, type MatchTeam, type ScoreDelivery } from "../lib/matchesApi";
 import { allowedDismissals, bowlerConcededRuns, completedRunsForDelivery, isLegalDelivery, nextFreeHit } from "../lib/cricketRules";
 import { createId } from "../lib/id";
 import PageHeader from "../components/PageHeader";
@@ -84,6 +84,7 @@ export default function ScoringPage({
   onExit: () => void;
   onComplete: () => void;
 }) {
+  const initialCanScore = match.permissions?.canScore ?? !match.clubId;
   const storageKey = `cricapp-match-score:${match.id}`;
   const localRecord = useMemo(() => {
     try {
@@ -102,7 +103,7 @@ export default function ScoringPage({
     return match.score ? normalizeState(match.score as ScoreState, match) : initialState(match);
   });
   const [history, setHistory] = useState<ScoreState[]>(() => localRecord?.history || []);
-  const [sheet, setSheet] = useState<"wicket" | null>(null);
+  const [sheet, setSheet] = useState<"wicket" | "scorer" | null>(null);
   const [dismissalType, setDismissalType] = useState<DismissalType>("bowled");
   const [dismissedPlayer, setDismissedPlayer] = useState(state.strikerId);
   const [fielderId, setFielderId] = useState("");
@@ -115,20 +116,38 @@ export default function ScoringPage({
   const [exiting, setExiting] = useState(false);
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<"live" | "scorecard" | "history">("live");
+  const [access, setAccess] = useState({
+    canScore: initialCanScore,
+    canManageScorer: match.permissions?.canManageScorer ?? false,
+  });
+  const [scorerId, setScorerId] = useState(
+    match.scoringOwnerId || match.scorer?.userId || "",
+  );
+  const [scorerOptions, setScorerOptions] = useState(
+    match.scorerOptions || [],
+  );
+  const [changingScorer, setChangingScorer] = useState(false);
   const versionRef = useRef(localRecord?.version ?? match.version ?? 0);
   const syncChain = useRef(Promise.resolve());
   const exitingRef = useRef(false);
 
   useEffect(() => {
+    if (!access.canScore) return;
     localStorage.setItem(storageKey, JSON.stringify({ state, history, version: versionRef.current, pending: syncStatus !== "synced" }));
-  }, [state, history, storageKey, syncStatus]);
+  }, [state, history, storageKey, syncStatus, access.canScore]);
 
   useEffect(() => {
     let active = true;
     getMatch(match.id).then((remote) => {
       if (!active) return;
+      setAccess({
+        canScore: remote.permissions?.canScore ?? !remote.clubId,
+        canManageScorer: remote.permissions?.canManageScorer ?? false,
+      });
+      setScorerId(remote.scoringOwnerId || remote.scorer?.userId || "");
+      setScorerOptions(remote.scorerOptions || []);
       const remoteVersion = remote.version || 0;
-      if (remote.score && (!localRecord?.pending || remoteVersion > versionRef.current)) {
+      if (remote.score && (!initialCanScore || !localRecord?.pending || remoteVersion > versionRef.current)) {
         setState(normalizeState(remote.score as ScoreState, match));
         setHistory([]);
         versionRef.current = remoteVersion;
@@ -142,7 +161,7 @@ export default function ScoringPage({
   }, [match.id]);
 
   useEffect(() => {
-    if (!cloudReady) return;
+    if (!cloudReady || !access.canScore) return;
     setSyncStatus((current) => current === "conflict" ? current : "pending");
     const snapshot = structuredClone(state);
     const timer = window.setTimeout(() => {
@@ -158,7 +177,37 @@ export default function ScoringPage({
       });
     }, 350);
     return () => window.clearTimeout(timer);
-  }, [state, cloudReady, match.id]);
+  }, [state, cloudReady, match.id, access.canScore]);
+
+  useEffect(() => {
+    let active = true;
+    const refresh = () => {
+      getMatch(match.id)
+        .then((remote) => {
+          if (!active) return;
+          const remoteCanScore = remote.permissions?.canScore ?? !remote.clubId;
+          setAccess({
+            canScore: remoteCanScore,
+            canManageScorer: remote.permissions?.canManageScorer ?? false,
+          });
+          setScorerId(remote.scoringOwnerId || remote.scorer?.userId || "");
+          setScorerOptions(remote.scorerOptions || []);
+          const remoteVersion = remote.version || 0;
+          if (!remoteCanScore && remote.score && remoteVersion >= versionRef.current) {
+            setState(normalizeState(remote.score as ScoreState, match));
+            setHistory([]);
+            versionRef.current = remoteVersion;
+            setSyncStatus("synced");
+          }
+        })
+        .catch(() => undefined);
+    };
+    const timer = window.setInterval(refresh, 3000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [match.id]);
 
   useEffect(() => {
     if (!toast) return;
@@ -523,6 +572,30 @@ export default function ScoringPage({
     }
   }
 
+  async function assignScorer() {
+    if (!scorerId || changingScorer) return;
+    setChangingScorer(true);
+    try {
+      if (access.canScore) await syncChain.current;
+      const updated = await changeMatchScorer(match.id, scorerId);
+      versionRef.current = updated.version || versionRef.current;
+      setAccess({
+        canScore: updated.permissions?.canScore ?? false,
+        canManageScorer: updated.permissions?.canManageScorer ?? false,
+      });
+      setScorerId(updated.scoringOwnerId || updated.scorer?.userId || scorerId);
+      setScorerOptions(updated.scorerOptions || scorerOptions);
+      setSheet(null);
+      setToast("Match scorer updated");
+    } catch (reason) {
+      setToast(
+        reason instanceof Error ? reason.message : "Unable to change scorer",
+      );
+    } finally {
+      setChangingScorer(false);
+    }
+  }
+
   function repairFromDelivery(deliveryId: string, remove: boolean) {
     const deliveryIndex = innings.deliveries.findIndex((delivery) => delivery.id === deliveryId);
     if (deliveryIndex < 0) return;
@@ -596,12 +669,15 @@ export default function ScoringPage({
   }
 
   if (state.phase === "completed") {
-    return <main className="full-score-shell score-complete-page"><PageHeader title="Match complete" eyebrow="RESULT" onBack={completeAndExit} backLabel="Back to match list" backLoading={exiting} /><div className="score-scroll"><section className="score-complete-hero"><span>MATCH COMPLETE</span><h2>{state.result}</h2><p>{match.teams[0].name} vs {match.teams[1].name}</p></section><div className="final-innings-list">{state.innings.map((item, index) => { const team = match.teams.find((entry) => entry.id === item.battingTeamId)!; return <div key={team.id}><span>{index + 1}</span><strong>{team.name}</strong><b>{item.runs}/{item.wickets}</b><small>{Math.floor(item.legalBalls / match.rules.ballsPerOver)}.{item.legalBalls % match.rules.ballsPerOver} ov</small></div>; })}</div>{history.length > 0 && <button type="button" className="score-secondary-action" onClick={undo} disabled={exiting}>Undo last delivery</button>}<button type="button" className="score-primary-action" onClick={completeAndExit} disabled={exiting}>{exiting ? "Saving match…" : "View match list"}</button></div></main>;
+    const leaveCompleted = access.canScore ? completeAndExit : onExit;
+    return <main className="full-score-shell score-complete-page"><PageHeader title="Match complete" eyebrow="RESULT" onBack={leaveCompleted} backLabel="Back to match list" backLoading={exiting} /><div className="score-scroll"><section className="score-complete-hero"><span>MATCH COMPLETE</span><h2>{state.result}</h2><p>{match.teams[0].name} vs {match.teams[1].name}</p></section><div className="final-innings-list">{state.innings.map((item, index) => { const team = match.teams.find((entry) => entry.id === item.battingTeamId)!; return <div key={team.id}><span>{index + 1}</span><strong>{team.name}</strong><b>{item.runs}/{item.wickets}</b><small>{Math.floor(item.legalBalls / match.rules.ballsPerOver)}.{item.legalBalls % match.rules.ballsPerOver} ov</small></div>; })}</div>{access.canScore && history.length > 0 && <button type="button" className="score-secondary-action" onClick={undo} disabled={exiting}>Undo last delivery</button>}<button type="button" className="score-primary-action" onClick={leaveCompleted} disabled={exiting}>{access.canScore && exiting ? "Saving match…" : "View match list"}</button></div></main>;
   }
 
   if (state.phase === "innings-break") {
     const secondBatting = fieldingTeam;
     const secondFielding = battingTeam;
+    if (!access.canScore)
+      return <main className="full-score-shell innings-break-page"><PageHeader title="Innings break" eyebrow="VIEW ONLY" onBack={onExit} backLabel="Back to match list" /><div className="score-scroll"><section className="break-target"><span>TARGET</span><strong>{innings.runs + 1}</strong><p>{secondBatting.name} need {innings.runs + 1} runs to win</p></section><section className="score-view-only innings-view-only"><strong>Waiting for the assigned scorer</strong><p>The second innings lineup will appear when scoring resumes.</p></section></div></main>;
     return <SecondInningsSetup batting={secondBatting} fielding={secondFielding} target={innings.runs + 1} exiting={exiting} onBack={pauseAndExit} onUndo={undo} onStart={startSecondInnings} />;
   }
 
@@ -633,7 +709,7 @@ export default function ScoringPage({
   ].filter(Boolean).join(" + ");
 
   return <main className="full-score-shell">
-    <PageHeader title="Live scoring" eyebrow={`LIVE · ${state.activeInnings === 0 ? "1ST" : "2ND"} INNINGS`} onBack={pauseAndExit} backLabel="Pause and exit scoring" backLoading={exiting} action={<div className="score-header-actions"><div className="score-header-menu-wrap"><button type="button" className="score-more-button" aria-label="Match actions" aria-haspopup="menu" aria-expanded={headerMenuOpen} onClick={() => setHeaderMenuOpen((open) => !open)} disabled={exiting}><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.7" /><circle cx="12" cy="12" r="1.7" /><circle cx="19" cy="12" r="1.7" /></svg></button>{headerMenuOpen && <><button type="button" className="score-menu-backdrop" aria-label="Close match actions" onClick={() => setHeaderMenuOpen(false)} /><div className="score-header-menu" role="menu"><span>MATCH ACTIONS</span><button type="button" role="menuitem" onClick={() => { setHeaderMenuOpen(false); endInnings(); }}><strong>End innings</strong><small>{state.activeInnings === 0 ? "Move to the innings break" : "Finish with the current score"}</small></button><button type="button" role="menuitem" className="warning" onClick={() => { setHeaderMenuOpen(false); void abandonMatch(); }}><strong>Abandon match</strong><small>Keep the score without a result</small></button><button type="button" role="menuitem" className="danger" onClick={() => { setHeaderMenuOpen(false); void removeCurrentMatch(); }}><strong>Remove match</strong><small>Permanently delete this match</small></button></div></>}</div><button type="button" className="page-header-text-action" onClick={pauseAndExit} disabled={exiting}>{exiting ? <><span className="page-header-spinner small" aria-hidden="true" /> Saving</> : "Pause"}</button></div>} />
+    <PageHeader title="Live scoring" eyebrow={`${access.canScore ? "LIVE" : "VIEW ONLY"} · ${state.activeInnings === 0 ? "1ST" : "2ND"} INNINGS`} onBack={access.canScore ? pauseAndExit : onExit} backLabel="Back to match list" backLoading={exiting} action={<div className="score-header-actions">{(access.canScore || access.canManageScorer) && <div className="score-header-menu-wrap"><button type="button" className="score-more-button" aria-label="Match actions" aria-haspopup="dialog" aria-expanded={headerMenuOpen} onClick={() => setHeaderMenuOpen((open) => !open)} disabled={exiting}><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.7" /><circle cx="12" cy="12" r="1.7" /><circle cx="19" cy="12" r="1.7" /></svg></button>{headerMenuOpen && <><button type="button" className="score-menu-backdrop" aria-label="Close match actions" onClick={() => setHeaderMenuOpen(false)} /><div className="score-header-menu" role="dialog" aria-modal="true" aria-label="Match actions"><div className="sheet-handle" /><div className="score-action-sheet-title"><span>MATCH ACTIONS</span><button type="button" onClick={() => setHeaderMenuOpen(false)} aria-label="Close match actions">×</button></div>{access.canManageScorer && <button type="button" onClick={() => { setHeaderMenuOpen(false); setSheet("scorer"); }}><strong>Change scorer</strong><small>Assign exclusive scoring access to a club member</small></button>}{access.canScore && <><button type="button" onClick={() => { setHeaderMenuOpen(false); endInnings(); }}><strong>End innings</strong><small>{state.activeInnings === 0 ? "Move to the innings break" : "Finish with the current score"}</small></button><button type="button" className="warning" onClick={() => { setHeaderMenuOpen(false); void abandonMatch(); }}><strong>Abandon match</strong><small>Keep the score without a result</small></button></>}{access.canManageScorer && <button type="button" className="danger" onClick={() => { setHeaderMenuOpen(false); void removeCurrentMatch(); }}><strong>Remove match</strong><small>Permanently delete this match</small></button>}</div></>}</div>}<button type="button" className="page-header-text-action" onClick={access.canScore ? pauseAndExit : onExit} disabled={exiting}>{access.canScore ? exiting ? <><span className="page-header-spinner small" aria-hidden="true" /> Saving</> : "Pause" : "Viewing"}</button></div>} />
     <div className="score-scroll">
     <section className="live-scoreboard">
       <div className="live-score-meta"><span className="live-batting-team">{battingTeam.name.toUpperCase()}</span><div className="score-status"><span className="live-dot" /> {syncStatus === "synced" ? "Synced" : syncStatus === "pending" ? "Sync pending" : syncStatus === "conflict" ? "Conflict — reload required" : syncStatus === "restoring" ? "Restoring" : "Saved on this device"} {state.freeHit && <b>FREE HIT</b>}</div></div>
@@ -646,7 +722,7 @@ export default function ScoringPage({
       <footer><span>Bowler</span><strong>{playerName(fieldingTeam, state.bowlerId)}</strong><span>{Math.floor(bowlerFigures.balls / match.rules.ballsPerOver)}.{bowlerFigures.balls % match.rules.ballsPerOver}–{bowlerFigures.runs}–{bowlerFigures.wickets}</span></footer>
     </section>
     <section className="live-over-strip"><span>THIS OVER</span><div>{thisOver.length ? thisOver.map((delivery) => <i key={delivery.id} className={delivery.wicket ? "wicket" : ""}>{delivery.label}</i>) : <small>First ball of the over</small>}</div></section>
-    <section className="live-controls">
+    {access.canScore ? <section className="live-controls">
       <div className="live-control-head"><div><span>ADD DELIVERY</span><strong>{draft.extraType === "wide" ? "Additional wide runs" : draft.runningExtraType === "bye" || draft.extraType === "bye" ? "Completed bye runs" : draft.runningExtraType === "leg-bye" || draft.extraType === "leg-bye" ? "Completed leg-bye runs" : "Runs off the bat"}</strong></div><div className="live-control-actions"><button type="button" onClick={correctStrike}>⇄ Swap strike</button><button type="button" onClick={handleUndo} disabled={!history.length && !hasDraftSelection}>↶ Undo</button></div></div>
       <div className="live-run-grid">{[0, 1, 2, 3, 4, 6].map((run) => <button type="button" key={run} className={selectedRunValue === run ? "selected" : ""} onClick={() => selectRuns(run)}>{run}</button>)}</div>
       {(draft.batRuns === 4 || draft.batRuns === 6) && !draft.extraType && <button type="button" className="boundary-toggle" onClick={() => setDraft((current) => ({ ...current, boundary: current.boundary ? undefined : current.batRuns as 4 | 6 }))}>{draft.boundary ? `Boundary ${draft.boundary}` : `${draft.batRuns} completed by running`}</button>}
@@ -659,44 +735,70 @@ export default function ScoringPage({
       </div>
       <div className="delivery-draft"><div><span>DELIVERY: {pendingDeliveryNumber}</span><strong>{hasDraftSelection ? draftDescription : "–"}</strong><small>{hasDraftSelection ? `${draftRuns} run${draftRuns === 1 ? "" : "s"} · ${draftIsLegal ? "legal ball" : "does not count in over"}` : "–"}</small></div></div>
       <button type="button" className="next-delivery-button" onClick={commitDraft} disabled={committing || !hasDraftSelection}><span>{nextCompletesOver ? "Save & Next over" : "Save & Next ball"}</span><b>→</b></button>
-    </section></>}
+    </section> : <section className="score-view-only"><strong>Viewing live score</strong><p>Only the assigned scorer can add deliveries. This page refreshes automatically.</p></section>}</>}
     {activeTab === "scorecard" && <LiveMatchScorecard match={match} state={state} />}
-    {activeTab === "history" && <BallByBallHistory match={match} state={state} onEdit={(deliveryId) => repairFromDelivery(deliveryId, false)} onRemove={(deliveryId) => repairFromDelivery(deliveryId, true)} />}
+    {activeTab === "history" && <BallByBallHistory match={match} state={state} onEdit={access.canScore ? (deliveryId) => repairFromDelivery(deliveryId, false) : undefined} onRemove={access.canScore ? (deliveryId) => repairFromDelivery(deliveryId, true) : undefined} />}
     </div>
 
     {sheet === "wicket" && <div className="score-sheet-backdrop" onMouseDown={() => setSheet(null)}><div className="score-sheet" onMouseDown={(event) => event.stopPropagation()}><div className="sheet-handle" /><h2>Record wicket</h2><p>Run-out keeps the selected runs. Other dismissals record a zero-run wicket.</p><label><span>Dismissed player</span><select value={dismissedPlayer} onChange={(event) => setDismissedPlayer(event.target.value)}><option value={state.strikerId}>{playerName(battingTeam, state.strikerId)}</option><option value={state.nonStrikerId}>{playerName(battingTeam, state.nonStrikerId)}</option></select></label><label><span>Dismissal</span><select value={dismissalType} onChange={(event) => setDismissalType(event.target.value as DismissalType)}>{allowedDismissals(state.freeHit, draft.extraType).map((type) => <option key={type} value={type}>{type.replace("-", " ")}</option>)}</select></label>{["caught", "stumped", "run-out"].includes(dismissalType) && <label><span>Fielder <i>Optional</i></span><select value={fielderId} onChange={(event) => setFielderId(event.target.value)}><option value="">Not recorded</option>{fieldingTeam.players.map((player) => <option key={player.id} value={player.id}>{player.name}</option>)}</select></label>}{dismissalType === "run-out" && <label><span>Surviving batter's end</span><select value={survivingEnd} onChange={(event) => setSurvivingEnd(event.target.value as "striker" | "non-striker")}><option value="striker">On strike</option><option value="non-striker">Non-striker's end</option></select></label>}<button type="button" className="score-primary-action danger" onClick={() => { const wicket = { playerId: dismissedPlayer, type: dismissalType, fielderId: fielderId || undefined, survivingEnd: dismissalType === "run-out" ? survivingEnd : undefined }; setDraft((current) => dismissalType === "run-out" ? { ...current, wicket } : { batRuns: 0, extraRuns: current.extraType === "no-ball" ? current.extraRuns : 0, extraType: current.extraType === "no-ball" ? "no-ball" : undefined, wicket }); setSheet(null); }}>Add wicket to delivery</button></div></div>}
-    {state.phase === "new-batter" && <SelectionSheet title="Choose the next batter" subtitle={`${innings.wickets} wicket${innings.wickets === 1 ? "" : "s"} down`} players={availableBatters} onSelect={chooseNewBatter} />}
-    {state.phase === "new-bowler" && <SelectionSheet title="Choose the next bowler" subtitle={`Over ${Math.floor(innings.legalBalls / match.rules.ballsPerOver) + 1}`} players={fieldingTeam.players.filter((player) => player.id !== state.bowlerId || fieldingTeam.players.length === 1)} onSelect={chooseBowler} />}
+    {sheet === "scorer" && <div className="score-sheet-backdrop" onMouseDown={() => setSheet(null)}><div className="score-sheet" onMouseDown={(event) => event.stopPropagation()}><div className="sheet-handle" /><span className="score-sheet-kicker">MATCH ACCESS</span><h2>Change scorer</h2><p>Only the selected club member can update this match. Everyone else keeps view-only access.</p><label><span>Assigned scorer</span><select value={scorerId} onChange={(event) => setScorerId(event.target.value)}>{scorerOptions.map((member) => <option value={member.userId} key={member.userId}>{member.email || `${member.role} member`} · {member.role}</option>)}</select></label><button type="button" className="score-primary-action" disabled={!scorerId || changingScorer} onClick={() => void assignScorer()}>{changingScorer ? "Updating scorer…" : "Assign scorer"}</button></div></div>}
+    {access.canScore && state.phase === "new-batter" && <SelectionSheet title="Choose the next batter" subtitle={`${innings.wickets} wicket${innings.wickets === 1 ? "" : "s"} down`} players={availableBatters} onSelect={chooseNewBatter} />}
+    {access.canScore && state.phase === "new-bowler" && <SelectionSheet title="Choose the next bowler" subtitle={`Over ${Math.floor(innings.legalBalls / match.rules.ballsPerOver) + 1}`} players={fieldingTeam.players.filter((player) => player.id !== state.bowlerId || fieldingTeam.players.length === 1)} onSelect={chooseBowler} />}
     {toast && <div className="score-toast">{toast}</div>}
   </main>;
 }
 
 function LiveMatchScorecard({ match, state }: { match: CricketMatch; state: ScoreState }) {
-  const [selectedTeamId, setSelectedTeamId] = useState<MatchTeam["id"]>(state.innings[state.activeInnings]?.battingTeamId || match.teams[0].id);
-  const selectedTeam = match.teams.find((team) => team.id === selectedTeamId)!;
-  const battingInnings = state.innings.find((item) => item.battingTeamId === selectedTeamId);
-  const fieldingInnings = state.innings.find((item) => item.battingTeamId !== selectedTeamId);
+  const [selectedInningsIndex, setSelectedInningsIndex] = useState(
+    state.activeInnings,
+  );
+  const selectedInnings =
+    state.innings[selectedInningsIndex] || state.innings[0];
+  const battingTeam = match.teams.find(
+    (team) => team.id === selectedInnings.battingTeamId,
+  )!;
+  const bowlingTeam = match.teams.find(
+    (team) => team.id !== selectedInnings.battingTeamId,
+  )!;
   const battingFigures = new Map<string, { runs: number; balls: number; fours: number; sixes: number }>();
   const bowlingFigures = new Map<string, { runs: number; balls: number; wickets: number }>();
   const dismissals = new Map<string, string>();
 
-  battingInnings?.deliveries.forEach((delivery) => {
+  selectedInnings.deliveries.forEach((delivery) => {
     const batter = battingFigures.get(delivery.strikerId) || { runs: 0, balls: 0, fours: 0, sixes: 0 };
     batter.runs += delivery.batRuns;
     if (delivery.legal) batter.balls += 1;
     if (delivery.boundary === 4) batter.fours += 1;
     if (delivery.boundary === 6) batter.sixes += 1;
     battingFigures.set(delivery.strikerId, batter);
+    battingFigures.set(
+      delivery.nonStrikerId,
+      battingFigures.get(delivery.nonStrikerId) || {
+        runs: 0,
+        balls: 0,
+        fours: 0,
+        sixes: 0,
+      },
+    );
     if (delivery.wicket) {
+      battingFigures.set(
+        delivery.wicket.playerId,
+        battingFigures.get(delivery.wicket.playerId) || {
+          runs: 0,
+          balls: 0,
+          fours: 0,
+          sixes: 0,
+        },
+      );
       const fielder = delivery.wicket.fielderId
-        ? match.teams.find((team) => team.id !== selectedTeamId)?.players.find((player) => player.id === delivery.wicket?.fielderId)?.name
+        ? bowlingTeam.players.find((player) => player.id === delivery.wicket?.fielderId)?.name
         : undefined;
       const dismissal = delivery.wicket.type.replace("-", " ");
       dismissals.set(delivery.wicket.playerId, fielder ? `${dismissal}, ${fielder}` : dismissal);
     }
   });
 
-  fieldingInnings?.deliveries.forEach((delivery) => {
+  selectedInnings.deliveries.forEach((delivery) => {
     const bowler = bowlingFigures.get(delivery.bowlerId) || { runs: 0, balls: 0, wickets: 0 };
     bowler.runs += bowlerConcededRuns(delivery, match.rules.noBallPenalty);
     if (delivery.legal) bowler.balls += 1;
@@ -704,53 +806,64 @@ function LiveMatchScorecard({ match, state }: { match: CricketMatch; state: Scor
     bowlingFigures.set(delivery.bowlerId, bowler);
   });
 
-  const isActiveBattingTeam = battingInnings === state.innings[state.activeInnings];
-  if (isActiveBattingTeam) {
+  const isActiveInnings = selectedInnings === state.innings[state.activeInnings];
+  if (isActiveInnings) {
     battingFigures.set(state.strikerId, battingFigures.get(state.strikerId) || { runs: 0, balls: 0, fours: 0, sixes: 0 });
     battingFigures.set(state.nonStrikerId, battingFigures.get(state.nonStrikerId) || { runs: 0, balls: 0, fours: 0, sixes: 0 });
   }
   const extrasByType = { wide: 0, noBall: 0, bye: 0, legBye: 0 };
-  battingInnings?.deliveries.forEach((delivery) => {
+  selectedInnings.deliveries.forEach((delivery) => {
     if (delivery.extraType === "wide") extrasByType.wide += delivery.extraRuns;
     if (delivery.extraType === "no-ball") extrasByType.noBall += delivery.extraRuns;
     if (delivery.extraType === "bye") extrasByType.bye += delivery.extraRuns;
     if (delivery.extraType === "leg-bye") extrasByType.legBye += delivery.extraRuns;
   });
   const extras = Object.values(extrasByType).reduce((total, value) => total + value, 0);
-  const score = battingInnings ? `${battingInnings.runs}/${battingInnings.wickets}` : "0/0";
-  const overs = battingInnings ? `${Math.floor(battingInnings.legalBalls / match.rules.ballsPerOver)}.${battingInnings.legalBalls % match.rules.ballsPerOver}` : "0.0";
+  const score = `${selectedInnings.runs}/${selectedInnings.wickets}`;
+  const overs = `${Math.floor(selectedInnings.legalBalls / match.rules.ballsPerOver)}.${selectedInnings.legalBalls % match.rules.ballsPerOver}`;
+  const battedPlayers = battingTeam.players.filter((player) =>
+    battingFigures.has(player.id),
+  );
+  const yetToBat = battingTeam.players.filter(
+    (player) => !battingFigures.has(player.id),
+  );
+  const bowlers = bowlingTeam.players.filter((player) =>
+    bowlingFigures.has(player.id),
+  );
 
   return <section className="live-scorecard-view">
     <div className="live-scorecard-heading"><div><span>MATCH SCORECARD</span><h2>{match.teams[0].name} vs {match.teams[1].name}</h2></div></div>
-    <div className="scorecard-team-tabs" role="tablist" aria-label="Scorecard team">{match.teams.map((team) => <button type="button" role="tab" aria-selected={selectedTeamId === team.id} className={selectedTeamId === team.id ? "active" : ""} key={team.id} onClick={() => setSelectedTeamId(team.id)}>{team.name}</button>)}</div>
+    <div className="scorecard-team-tabs scorecard-innings-tabs" role="tablist" aria-label="Scorecard innings">{state.innings.map((item, index) => { const team = match.teams.find((entry) => entry.id === item.battingTeamId)!; return <button type="button" role="tab" aria-selected={selectedInningsIndex === index} className={selectedInningsIndex === index ? "active" : ""} key={`${item.battingTeamId}-${index}`} onClick={() => setSelectedInningsIndex(index)}>{index + 1}{index === 0 ? "st" : "nd"} innings · {team.name}</button>; })}</div>
     <article className="detailed-scorecard">
-      <header><strong>{selectedTeam.name}</strong><b>{score} <small>({overs})</small></b></header>
+      <header><span><small>{selectedInningsIndex + 1}{selectedInningsIndex === 0 ? "ST" : "ND"} INNINGS</small><strong>{battingTeam.name}</strong></span><b>{score} <small>({overs})</small></b></header>
       <h3>Batting</h3>
       <div className="batting-table scorecard-table">
         <div className="scorecard-table-head"><span>BATTER</span><span>R</span><span>B</span><span>4</span><span>6</span><span>SR</span></div>
-        {selectedTeam.players.map((player) => {
-          const figures = battingFigures.get(player.id);
-          const status = figures ? dismissals.get(player.id) || "Not out" : "Did not bat";
-          const strikeRate = figures?.balls ? (figures.runs * 100 / figures.balls).toFixed(1) : figures ? "—" : "—";
-          return <div className="scorecard-table-row batting-row" key={player.id}><span className="scorecard-player"><strong>{player.name}{isActiveBattingTeam && player.id === state.strikerId ? " *" : ""}</strong><small>{status}</small></span><span>{figures?.runs ?? "—"}</span><span>{figures?.balls ?? "—"}</span><span>{figures?.fours ?? "—"}</span><span>{figures?.sixes ?? "—"}</span><span>{strikeRate}</span></div>;
+        {battedPlayers.map((player) => {
+          const figures = battingFigures.get(player.id)!;
+          const status = dismissals.get(player.id) || "Not out";
+          const strikeRate = figures.balls ? (figures.runs * 100 / figures.balls).toFixed(1) : "—";
+          return <div className="scorecard-table-row batting-row" key={player.id}><span className="scorecard-player"><strong>{player.name}{isActiveInnings && player.id === state.strikerId ? " *" : ""}</strong><small>{status}</small></span><span>{figures.runs}</span><span>{figures.balls}</span><span>{figures.fours}</span><span>{figures.sixes}</span><span>{strikeRate}</span></div>;
         })}
       </div>
+      {yetToBat.length > 0 && <div className="yet-to-bat"><strong>Yet to bat</strong><div>{yetToBat.map((player) => <span key={player.id}>{player.name}</span>)}</div></div>}
       <div className="scorecard-extras"><span><strong>Extras</strong><small>Wd {extrasByType.wide} · Nb {extrasByType.noBall} · B {extrasByType.bye} · Lb {extrasByType.legBye}</small></span><b>{extras}</b></div>
-      <h3>Bowling</h3>
+      <h3>{bowlingTeam.name} bowling</h3>
       <div className="bowling-table scorecard-table">
         <div className="scorecard-table-head"><span>BOWLER</span><span>O</span><span>R</span><span>W</span><span>ECON</span></div>
-        {selectedTeam.players.map((player) => {
-          const figures = bowlingFigures.get(player.id);
-          const oversBowled = figures ? `${Math.floor(figures.balls / match.rules.ballsPerOver)}.${figures.balls % match.rules.ballsPerOver}` : "—";
-          const economy = figures?.balls ? (figures.runs * match.rules.ballsPerOver / figures.balls).toFixed(2) : "—";
-          return <div className="scorecard-table-row bowling-row" key={player.id}><span className="scorecard-player"><strong>{player.name}</strong><small>{figures ? "Bowled" : "Did not bowl"}</small></span><span>{oversBowled}</span><span>{figures?.runs ?? "—"}</span><span>{figures?.wickets ?? "—"}</span><span>{economy}</span></div>;
+        {bowlers.map((player) => {
+          const figures = bowlingFigures.get(player.id)!;
+          const oversBowled = `${Math.floor(figures.balls / match.rules.ballsPerOver)}.${figures.balls % match.rules.ballsPerOver}`;
+          const economy = figures.balls ? (figures.runs * match.rules.ballsPerOver / figures.balls).toFixed(2) : "—";
+          return <div className="scorecard-table-row bowling-row" key={player.id}><span className="scorecard-player"><strong>{player.name}</strong></span><span>{oversBowled}</span><span>{figures.runs}</span><span>{figures.wickets}</span><span>{economy}</span></div>;
         })}
       </div>
+      {!bowlers.length && <p className="scorecard-no-bowling">No bowling figures yet.</p>}
     </article>
   </section>;
 }
 
-function BallByBallHistory({ match, state, onEdit, onRemove }: { match: CricketMatch; state: ScoreState; onEdit: (deliveryId: string) => void; onRemove: (deliveryId: string) => void }) {
+function BallByBallHistory({ match, state, onEdit, onRemove }: { match: CricketMatch; state: ScoreState; onEdit?: (deliveryId: string) => void; onRemove?: (deliveryId: string) => void }) {
   const hasDeliveries = state.innings.some((item) => item.deliveries.length > 0);
   return <section className="ball-history-view">
     {!hasDeliveries && <div className="score-tab-empty"><strong>No deliveries yet</strong><p>Saved balls will appear here as the match progresses.</p></div>}
@@ -765,7 +878,7 @@ function BallByBallHistory({ match, state, onEdit, onRemove }: { match: CricketM
           const ball = `${Math.floor(legalBalls / match.rules.ballsPerOver)}.${legalBalls % match.rules.ballsPerOver + 1}`;
           if (delivery.legal) legalBalls += 1;
           const detail = delivery.wicket ? `${delivery.wicket.type.replace("-", " ")} · ${delivery.label}` : delivery.extraType ? `${delivery.extraType.replace("-", " ")} · ${delivery.label}` : delivery.batRuns ? `${delivery.batRuns} run${delivery.batRuns === 1 ? "" : "s"}` : "Dot ball";
-          const editable = inningsIndex === state.activeInnings;
+          const editable = inningsIndex === state.activeInnings && onEdit && onRemove;
           return <div className={delivery.wicket ? "wicket" : ""} key={delivery.id}><span className="ball-number">{ball}</span><span className="ball-event"><strong>{playerName(batting, delivery.strikerId)} <i>to</i> {playerName(fielding, delivery.bowlerId)}</strong><small>{detail}</small></span><b>{delivery.label}</b>{editable && <span className="ball-actions"><button type="button" onClick={() => onEdit(delivery.id)}>Edit</button><button type="button" className="danger" onClick={() => onRemove(delivery.id)}>Remove</button></span>}</div>;
         })}</div>
       </article>;

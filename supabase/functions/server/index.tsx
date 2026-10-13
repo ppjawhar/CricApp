@@ -38,17 +38,19 @@ type ClubMembership = {
   clubId: string
   userId: string
   joinedAt: string
+  email?: string
 }
 type ClubInvitation = {
   id: string
   clubId: string
   clubName: string
   email: string
-  role: Exclude<ClubRole, "admin">
+  role: Exclude<ClubRole, "scorer">
   status: "pending" | "accepted" | "declined"
   invitedBy: string
   createdAt: string
   respondedAt?: string
+  acceptedUserId?: string
 }
 type StoredMatch = {
   id: string
@@ -182,6 +184,14 @@ function publicClub(
   club: StoredClub,
   role: ClubRole | undefined,
   matches: StoredMatch[] = [],
+  members: Array<{
+    userId: string
+    email?: string
+    role: Exclude<ClubRole, "scorer">
+    joinedAt: string
+    isCreator: boolean
+  }> = [],
+  pendingInvitations: ClubInvitation[] = [],
 ) {
   const players = Array.isArray(club.players) ? club.players : []
   const clubMatches = matches.filter((match) => match.clubId === club.id)
@@ -273,6 +283,8 @@ function publicClub(
       .sort((a, b) => (b.completedAt || b.updatedAt || b.createdAt).localeCompare(a.completedAt || a.updatedAt || a.createdAt))
       .slice(0, 10),
     players,
+    members,
+    pendingInvitations,
     membership: role ? { role } : undefined,
     joined: Boolean(role),
   }
@@ -308,12 +320,62 @@ async function canReadMatch(match: StoredMatch, userId: string) {
 }
 
 async function canScoreMatch(match: StoredMatch, userId: string) {
-  if (match.createdBy === userId) return true
-  if (!match.clubId) return false
+  return (match.scoringOwnerId || match.createdBy) === userId
+}
+
+async function getClubMembers(club: StoredClub) {
+  const stored = (await kv.getByPrefix("user-club:")) as ClubMembership[]
+  const byUser = new Map(
+    stored
+      .filter((membership) => membership.clubId === club.id)
+      .map((membership) => [membership.userId, membership]),
+  )
+  return Object.entries(club.memberships || {}).map(([userId, embeddedRole]) => {
+    const membership = byUser.get(userId)
+    return {
+      userId,
+      email: membership?.email,
+      role: embeddedRole === "scorer" ? "member" as const : embeddedRole,
+      joinedAt: membership?.joinedAt || club.createdAt,
+      isCreator: userId === club.createdBy,
+    }
+  })
+}
+
+async function publicMatch(match: StoredMatch, userId: string) {
+  if (!match.clubId) {
+    return {
+      ...match,
+      permissions: {
+        canScore: (match.scoringOwnerId || match.createdBy) === userId,
+        canManageScorer: match.createdBy === userId,
+      },
+      scorer: {
+        userId: match.scoringOwnerId || match.createdBy,
+        role: "admin",
+      },
+      scorerOptions: [],
+    }
+  }
   const club = (await kv.get(clubKey(match.clubId))) as StoredClub | undefined
-  if (!club) return false
-  const role = await getClubRole(club, userId)
-  return canManageClub(role) || role === "scorer"
+  if (!club) return match
+  const [role, members] = await Promise.all([
+    getClubRole(club, userId),
+    getClubMembers(club),
+  ])
+  const scorerId = match.scoringOwnerId || match.createdBy
+  return {
+    ...match,
+    permissions: {
+      canScore: scorerId === userId,
+      canManageScorer: canManageClub(role),
+    },
+    scorer: members.find((member) => member.userId === scorerId) || {
+      userId: scorerId,
+      role: "member",
+    },
+    scorerOptions: canManageClub(role) ? members : [],
+  }
 }
 
 async function persistMatch(match: StoredMatch) {
@@ -371,12 +433,21 @@ app.post(`${API_PREFIX}/clubs`, async (c) => {
       clubId: club.id,
       userId,
       joinedAt: club.createdAt,
+      email: c.get("userEmail") as string,
     }
     await kv.mset([clubKey(club.id), membershipKey(userId, club.id)], [
       club,
       membership,
     ])
-    return c.json({ club: publicClub(club, "admin") }, 201)
+    return c.json({
+      club: publicClub(club, "admin", [], [{
+        userId,
+        email: membership.email,
+        role: "admin",
+        joinedAt: membership.joinedAt,
+        isCreator: true,
+      }]),
+    }, 201)
   } catch (error) {
     return c.json(
       {
@@ -391,11 +462,46 @@ app.get(`${API_PREFIX}/clubs/:clubId`, async (c) => {
   const club = await getClubOrResponse(c, c.req.param("clubId"))
   if (isResponse(club)) return club
   const userId = c.get("userId") as string
-  const [matches, role] = await Promise.all([
+  const [matches, role, members, invitations] = await Promise.all([
     kv.getByPrefix("match:") as Promise<StoredMatch[]>,
     getClubRole(club, userId),
+    getClubMembers(club),
+    kv.getByPrefix("invitation:") as Promise<ClubInvitation[]>,
   ])
-  return c.json({ club: publicClub(club, role, matches) })
+  let visibleMembers = role
+    ? members.map((member) =>
+      member.userId === userId && !member.email
+        ? { ...member, email: c.get("userEmail") as string }
+        : member
+    )
+    : []
+  const membersWithoutEmail = visibleMembers.filter((member) => !member.email)
+  if (membersWithoutEmail.length) {
+    const supabase = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+      { auth: { persistSession: false, autoRefreshToken: false } },
+    )
+    const recoveredEmails = new Map(
+      (await Promise.all(membersWithoutEmail.map(async (member) => {
+        const { data } = await supabase.auth.admin.getUserById(member.userId)
+        return [member.userId, data.user?.email?.toLowerCase()] as const
+      }))).filter((entry): entry is readonly [string, string] => Boolean(entry[1])),
+    )
+    visibleMembers = visibleMembers.map((member) => ({
+      ...member,
+      email: member.email || recoveredEmails.get(member.userId),
+    }))
+  }
+  const pendingInvitations = canManageClub(role)
+    ? invitations.filter(
+        (invitation) =>
+          invitation.clubId === club.id && invitation.status === "pending",
+      )
+    : []
+  return c.json({
+    club: publicClub(club, role, matches, visibleMembers, pendingInvitations),
+  })
 })
 
 app.put(`${API_PREFIX}/clubs/:clubId`, async (c) => {
@@ -538,8 +644,11 @@ app.post(`${API_PREFIX}/clubs/:clubId/invitations`, async (c) => {
     const body = await readJson(c)
     const email = cleanRequiredString(body.email, "Email", 254).toLowerCase()
     if (!/^\S+@\S+\.\S+$/.test(email)) throw new Error("Enter a valid email address.")
-    const role = ["organizer", "scorer", "member"].includes(body.role)
-      ? body.role as Exclude<ClubRole, "admin">
+    const allowedRoles = requesterRole === "admin"
+      ? ["admin", "organizer", "member"]
+      : ["organizer", "member"]
+    const role = allowedRoles.includes(body.role)
+      ? body.role as Exclude<ClubRole, "scorer">
       : "member"
     const existing = (await kv.getByPrefix(`user-invitation:${email}:`)) as ClubInvitation[]
     if (existing.some((invite) => invite.clubId === club.id && invite.status === "pending"))
@@ -584,7 +693,8 @@ app.post(`${API_PREFIX}/invitations/:invitationId/respond`, async (c) => {
       const club = (await kv.get(clubKey(invitation.clubId))) as StoredClub | undefined
       if (!club) return c.json({ error: "This club no longer exists." }, 410)
       club.memberships = { ...(club.memberships || {}), [userId]: invitation.role }
-      const membership: ClubMembership = { role: invitation.role, clubId: club.id, userId, joinedAt: invitation.respondedAt! }
+      invitation.acceptedUserId = userId
+      const membership: ClubMembership = { role: invitation.role, clubId: club.id, userId, joinedAt: invitation.respondedAt!, email }
       keys.push(clubKey(club.id), membershipKey(userId, club.id))
       values.push(club, membership)
     }
@@ -603,10 +713,18 @@ app.put(`${API_PREFIX}/clubs/:clubId/members/:memberId`, async (c) => {
   if (requesterRole !== "admin") return c.json({ error: "Only an admin can change member roles." }, 403)
   try {
     const body = await readJson(c)
-    if (!["organizer", "scorer", "member"].includes(body.role)) throw new Error("Invalid member role.")
+    if (!["admin", "organizer", "member"].includes(body.role)) throw new Error("Invalid member role.")
     const memberId = c.req.param("memberId")
     const membership = (await kv.get(membershipKey(memberId, club.id))) as ClubMembership | undefined
     if (!membership) return c.json({ error: "Member not found." }, 404)
+    const currentRole = club.memberships?.[memberId] || membership.role
+    if (currentRole === "admin" && body.role !== "admin") {
+      const adminCount = Object.values(club.memberships || {}).filter(
+        (role) => role === "admin",
+      ).length
+      if (adminCount <= 1)
+        return c.json({ error: "Assign another admin before changing the last admin." }, 409)
+    }
     membership.role = body.role
     club.memberships = { ...(club.memberships || {}), [memberId]: body.role }
     await kv.mset([clubKey(club.id), membershipKey(memberId, club.id)], [club, membership])
@@ -614,6 +732,44 @@ app.put(`${API_PREFIX}/clubs/:clubId/members/:memberId`, async (c) => {
   } catch (error) {
     return c.json({ error: error instanceof Error ? error.message : "Invalid member role." }, 400)
   }
+})
+
+app.delete(`${API_PREFIX}/clubs/:clubId/members/:memberId`, async (c) => {
+  const userId = c.get("userId") as string
+  const club = await getClubOrResponse(c, c.req.param("clubId"))
+  if (isResponse(club)) return club
+  const requesterRole = await getClubRole(club, userId)
+  if (requesterRole !== "admin")
+    return c.json({ error: "Only an admin can remove club members." }, 403)
+  const memberId = c.req.param("memberId")
+  if (memberId === club.createdBy)
+    return c.json({ error: "The club creator cannot be removed." }, 409)
+  const membership = (await kv.get(
+    membershipKey(memberId, club.id),
+  )) as ClubMembership | undefined
+  if (!membership) return c.json({ error: "Member not found." }, 404)
+  const nextMemberships = { ...(club.memberships || {}) }
+  delete nextMemberships[memberId]
+  club.memberships = nextMemberships
+  const matches = (await kv.getByPrefix(
+    `club-match:${club.id}:`,
+  )) as StoredMatch[]
+  const changedMatches = matches.filter(
+    (match) =>
+      match.scoringOwnerId === memberId &&
+      !["completed", "abandoned"].includes(match.status),
+  )
+  changedMatches.forEach((match) => {
+    match.scoringOwnerId = userId
+    match.updatedAt = new Date().toISOString()
+    match.version = (match.version || 0) + 1
+  })
+  await Promise.all([
+    kv.set(clubKey(club.id), club),
+    kv.del(membershipKey(memberId, club.id)),
+    ...changedMatches.map((match) => persistMatch(match)),
+  ])
+  return c.body(null, 204)
 })
 
 function validateMatchInput(body: any) {
@@ -675,6 +831,7 @@ app.post(`${API_PREFIX}/matches`, async (c) => {
   try {
     const body = await readJson(c)
     validateMatchInput(body)
+    let scoringOwnerId = userId
     if (body.mode !== "quick") {
       if (typeof body.clubId !== "string")
         return c.json({ error: "A club is required for a club match." }, 400)
@@ -683,7 +840,7 @@ app.post(`${API_PREFIX}/matches`, async (c) => {
       )) as StoredClub | undefined
       if (!club) return c.json({ error: "Club not found." }, 404)
       const role = await getClubRole(club, userId)
-      if (!canManageClub(role) && role !== "scorer")
+      if (!canManageClub(role))
         return c.json(
           {
             error:
@@ -691,6 +848,14 @@ app.post(`${API_PREFIX}/matches`, async (c) => {
           },
           403,
         )
+      const members = await getClubMembers(club)
+      const requestedScorer = typeof body.scoringOwnerId === "string"
+        ? body.scoringOwnerId
+        : undefined
+      const defaultAdmin = members.find((member) => member.role === "admin")
+      scoringOwnerId = requestedScorer || defaultAdmin?.userId || club.createdBy
+      if (!members.some((member) => member.userId === scoringOwnerId))
+        return c.json({ error: "Choose a current club member as scorer." }, 400)
       const activeRosterIds = new Set(club.players.filter((player) => player.status === "active").map((player) => player.id))
       const representedPlayers = body.mode === "club-internal"
         ? body.teams.flatMap((team: any) => team.players)
@@ -712,10 +877,10 @@ app.post(`${API_PREFIX}/matches`, async (c) => {
       createdBy: userId,
       updatedAt: new Date().toISOString(),
       version: 0,
-      scoringOwnerId: userId,
+      scoringOwnerId,
     }
     await persistMatch(match)
-    return c.json({ match }, 201)
+    return c.json({ match: await publicMatch(match, userId) }, 201)
   } catch (error) {
     return c.json(
       {
@@ -736,10 +901,13 @@ app.get(`${API_PREFIX}/matches`, async (c) => {
       allowed: await canReadMatch(match, userId),
     })),
   )
-  return c.json({
-    matches: readable
+  const visibleMatches = await Promise.all(
+    readable
       .filter((item) => item.allowed)
-      .map((item) => item.match)
+      .map((item) => publicMatch(item.match, userId)),
+  )
+  return c.json({
+    matches: visibleMatches
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
   })
 })
@@ -752,7 +920,35 @@ app.get(`${API_PREFIX}/matches/:matchId`, async (c) => {
   if (!match) return c.json({ error: "Match not found." }, 404)
   if (!await canReadMatch(match, userId))
     return c.json({ error: "You do not have access to this match." }, 403)
-  return c.json({ match })
+  return c.json({ match: await publicMatch(match, userId) })
+})
+
+app.put(`${API_PREFIX}/matches/:matchId/scorer`, async (c) => {
+  const userId = c.get("userId") as string
+  const match = (await kv.get(
+    matchKey(c.req.param("matchId")),
+  )) as StoredMatch | undefined
+  if (!match) return c.json({ error: "Match not found." }, 404)
+  if (!match.clubId)
+    return c.json({ error: "Quick Match scorer cannot be reassigned." }, 409)
+  const club = (await kv.get(clubKey(match.clubId))) as StoredClub | undefined
+  if (!club) return c.json({ error: "Club not found." }, 404)
+  const role = await getClubRole(club, userId)
+  if (!canManageClub(role))
+    return c.json({ error: "Only an admin or organizer can change the scorer." }, 403)
+  try {
+    const body = await readJson(c)
+    const members = await getClubMembers(club)
+    if (!members.some((member) => member.userId === body.scorerId))
+      return c.json({ error: "Choose a current club member as scorer." }, 400)
+    match.scoringOwnerId = body.scorerId
+    match.updatedAt = new Date().toISOString()
+    match.version = (match.version || 0) + 1
+    await persistMatch(match)
+    return c.json({ match: await publicMatch(match, userId) })
+  } catch (error) {
+    return c.json({ error: error instanceof Error ? error.message : "Invalid scorer." }, 400)
+  }
 })
 
 app.delete(`${API_PREFIX}/matches/:matchId`, async (c) => {
@@ -857,7 +1053,7 @@ app.put(`${API_PREFIX}/matches/:matchId/score`, async (c) => {
         : "live"
     if (match.status === "completed") match.completedAt = match.updatedAt
     await persistMatch(match)
-    return c.json({ match })
+    return c.json({ match: await publicMatch(match, userId) })
   } catch (error) {
     return c.json({ error: error instanceof Error ? error.message : "Invalid score state." }, 400)
   }
@@ -880,7 +1076,7 @@ app.put(`${API_PREFIX}/matches/:matchId/status`, async (c) => {
     match.version = (match.version || 0) + 1
     if (body.status === "abandoned") match.completedAt = match.updatedAt
     await persistMatch(match)
-    return c.json({ match })
+    return c.json({ match: await publicMatch(match, userId) })
   } catch (error) {
     return c.json({ error: error instanceof Error ? error.message : "Invalid match status." }, 400)
   }
