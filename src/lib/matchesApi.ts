@@ -100,7 +100,7 @@ export type CricketMatch = {
   corrections?: Array<{ id: string; deliveryId: string; original: unknown; replacement: unknown; actorId: string; createdAt: string }>;
 };
 
-const apiUrl = `https://${projectId}.supabase.co/functions/v1/make-server-28e50dbb`;
+const apiUrl = `https://${projectId}.supabase.co/functions/v1/cricapp-api`;
 
 async function request(path: string, options?: RequestInit) {
   const { data } = await supabase.auth.getSession();

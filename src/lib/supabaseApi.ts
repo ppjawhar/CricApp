@@ -9,7 +9,7 @@ export type SavedMatchState = {
   updatedAt?: string;
 };
 
-const apiUrl = `https://${projectId}.supabase.co/functions/v1/make-server-28e50dbb`;
+const apiUrl = `https://${projectId}.supabase.co/functions/v1/cricapp-api`;
 
 function getDeviceId() {
   const existing = localStorage.getItem("cricapp-device-id");

@@ -53,7 +53,7 @@ export type Club = {
   joined?: boolean;
 };
 
-const apiUrl = `https://${projectId}.supabase.co/functions/v1/make-server-28e50dbb`;
+const apiUrl = `https://${projectId}.supabase.co/functions/v1/cricapp-api`;
 
 async function request(path: string, options?: RequestInit) {
   const { data } = await supabase.auth.getSession();

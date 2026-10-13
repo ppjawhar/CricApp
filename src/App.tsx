@@ -420,13 +420,13 @@ function Home({
         }
       />
       <div className="page home-page">
-        <section className="welcome-row">
+        {/* <section className="welcome-row">
           <div>
             <span className="eyebrow">{today}</span>
             <h1>Ready for the crease?</h1>
             <p>Start a new game or pick up where you left off.</p>
           </div>
-        </section>
+        </section> */}
 
         {activeMatch ? (
           <section className="hero-card">

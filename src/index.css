@@ -22,7 +22,7 @@ button { font: inherit; }
 button:focus-visible { outline: 3px solid rgba(104, 158, 47, .35); outline-offset: 2px; }
 .icon { display: block; flex: 0 0 auto; }
 .app-shell { width: 100%; max-width: 560px; height: 100vh; height: 100dvh; margin: 0 auto; display: flex; flex-direction: column; overflow: hidden; background: var(--paper); position: relative; box-shadow: 0 0 50px rgba(25, 40, 34, .08); }
-.page-header { min-height: calc(76px + env(safe-area-inset-top)); padding: calc(10px + env(safe-area-inset-top)) 22px 10px; display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 16px; border-bottom: 1px solid rgba(20, 45, 37, .08); position: sticky; top: 0; z-index: 20; background: var(--paper); }
+.page-header { min-height: calc(76px + env(safe-area-inset-top)); padding: calc(10px + env(safe-area-inset-top)) 22px 10px; display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 16px; border-bottom: 1px solid rgba(20, 45, 37, .08); position: relative; z-index: 20; background: var(--paper); }
 .page-header-leading, .page-header-brand, .page-header-actions, .brand-mark, .sync-line, .text-button, .club-copy small, .primary-button, .resume-line strong { display: flex; align-items: center; }
 .page-header-leading { min-width: 0; gap: 12px; }
 .page-header-brand { gap: 11px; }
@@ -130,7 +130,7 @@ h1, h2 { font-family: "Manrope"; letter-spacing: -.8px; }
 .result-copy strong { display: flex; justify-content: space-between; font-size: 13px; }
 .result-copy p { font-size: 11px; margin: 4px 0; }
 .result-copy small { color: var(--muted); font-size: 10px; }
-.bottom-nav { position: absolute; z-index: 30; bottom: calc(12px + env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); width: calc(100% - 32px); max-width: 520px; min-height: 72px; padding: 6px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 3px; border: 1px solid rgba(255,255,255,.78); border-radius: 999px; background: rgba(247,250,245,.93); box-shadow: 0 12px 36px rgba(15,35,28,.18), 0 2px 8px rgba(15,35,28,.08), inset 0 1px 0 rgba(255,255,255,.88); backdrop-filter: blur(24px) saturate(180%); -webkit-backdrop-filter: blur(24px) saturate(180%); }
+.bottom-nav { position: fixed; z-index: 30; bottom: calc(12px + env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); width: min(520px, calc(100vw - 32px)); min-height: 72px; padding: 6px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 3px; border: 1px solid rgba(255,255,255,.78); border-radius: 999px; background: rgba(247,250,245,.93); box-shadow: 0 12px 36px rgba(15,35,28,.18), 0 2px 8px rgba(15,35,28,.08), inset 0 1px 0 rgba(255,255,255,.88); backdrop-filter: blur(24px) saturate(180%); -webkit-backdrop-filter: blur(24px) saturate(180%); }
 .nav-item { min-width: 0; min-height: 58px; border: 0; border-radius: 999px; background: transparent; color: #64736a; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; font-size: 10px; font-weight: 700; cursor: pointer; transition: background .2s ease, color .2s ease, box-shadow .2s ease; }
 .nav-item:active { background: rgba(255,255,255,.58); }
 .nav-icon { width: 35px; height: 30px; display: grid; place-items: center; border-radius: 11px; }

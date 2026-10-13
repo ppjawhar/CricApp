@@ -4,7 +4,7 @@ import { cors } from "npm:hono/cors"
 import { logger } from "npm:hono/logger"
 import * as kv from "./kv_store.tsx"
 
-const API_PREFIX = "/make-server-28e50dbb"
+const API_PREFIX = "/cricapp-api"
 const app = new Hono<{ Variables: { userId: string; userEmail: string } }>()
 
 type ClubRole = "admin" | "organizer" | "scorer" | "member"
