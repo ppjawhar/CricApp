@@ -213,6 +213,28 @@ function Avatar({
 
 type Tab = "Home" | "Clubs" | "Matches" | "Profile";
 
+function isKeyboardInput(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.isContentEditable || target instanceof HTMLTextAreaElement) {
+    return true;
+  }
+  if (target instanceof HTMLSelectElement) return true;
+  if (!(target instanceof HTMLInputElement)) return false;
+
+  return ![
+    "button",
+    "checkbox",
+    "color",
+    "file",
+    "hidden",
+    "image",
+    "radio",
+    "range",
+    "reset",
+    "submit",
+  ].includes(target.type);
+}
+
 const PHOTO =
   "https://images.unsplash.com/photo-1779488399581-19bcffd19520?crop=entropy&cs=tinysrgb&fit=crop&fm=jpg&q=85&w=1200";
 
@@ -227,6 +249,7 @@ export default function App() {
 function AuthenticatedApp() {
   const { user, signOut } = useAuth();
   const [tab, setTab] = useState<Tab>("Home");
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
   const [scoring, setScoring] = useState(false);
   const [setupEntry, setSetupEntry] = useState<"quick" | "club" | null>(null);
   const [setupClub, setSetupClub] = useState<Club | undefined>();
@@ -234,6 +257,61 @@ function AuthenticatedApp() {
     CricketMatch | undefined
   >();
   const [currentMatch, setCurrentMatch] = useState<CricketMatch | null>(null);
+
+  useEffect(() => {
+    let releaseTimer: number | undefined;
+    let viewportTimer: number | undefined;
+    const visualViewport = window.visualViewport;
+    let fullViewportHeight = Math.max(
+      window.innerHeight,
+      visualViewport?.height ?? 0,
+    );
+
+    const keepNavigationHidden = () => {
+      window.clearTimeout(releaseTimer);
+      setKeyboardOpen(true);
+    };
+    const restoreNavigation = () => {
+      window.clearTimeout(releaseTimer);
+      releaseTimer = window.setTimeout(() => {
+        setKeyboardOpen(isKeyboardInput(document.activeElement));
+      }, 350);
+    };
+    const handleFocusIn = (event: FocusEvent) => {
+      if (isKeyboardInput(event.target)) keepNavigationHidden();
+    };
+    const handleFocusOut = (event: FocusEvent) => {
+      if (isKeyboardInput(event.target)) restoreNavigation();
+    };
+    const handleViewportChange = () => {
+      window.clearTimeout(viewportTimer);
+      viewportTimer = window.setTimeout(() => {
+        const viewportHeight = visualViewport?.height ?? window.innerHeight;
+        if (!isKeyboardInput(document.activeElement)) {
+          fullViewportHeight = Math.max(fullViewportHeight, viewportHeight);
+          return;
+        }
+
+        const coveredHeight = fullViewportHeight - viewportHeight;
+        if (coveredHeight > 120) setKeyboardOpen(true);
+        if (coveredHeight < 80) setKeyboardOpen(false);
+      }, 120);
+    };
+
+    document.addEventListener("focusin", handleFocusIn);
+    document.addEventListener("focusout", handleFocusOut);
+    visualViewport?.addEventListener("resize", handleViewportChange);
+    window.addEventListener("resize", handleViewportChange);
+
+    return () => {
+      window.clearTimeout(releaseTimer);
+      window.clearTimeout(viewportTimer);
+      document.removeEventListener("focusin", handleFocusIn);
+      document.removeEventListener("focusout", handleFocusOut);
+      visualViewport?.removeEventListener("resize", handleViewportChange);
+      window.removeEventListener("resize", handleViewportChange);
+    };
+  }, []);
 
   function startQuick() {
     setSetupClub(undefined);
@@ -330,30 +408,32 @@ function AuthenticatedApp() {
         />
       )}
 
-      <nav className="bottom-nav" aria-label="Main navigation">
-        {(["Home", "Clubs", "Matches", "Profile"] as Tab[]).map((item) => (
-          <Button
-            key={item}
-            className={`nav-item ${tab === item ? "active" : ""}`}
-            onClick={() => setTab(item)}
-          >
-            <span className="nav-icon">
-              <Icon
-                name={
-                  item === "Home"
-                    ? "home"
-                    : item === "Clubs"
-                      ? "clubs"
-                      : item === "Matches"
-                        ? "matches"
-                        : "user"
-                }
-              />
-            </span>
-            <span>{item}</span>
-          </Button>
-        ))}
-      </nav>
+      {!keyboardOpen && (
+        <nav className="bottom-nav" aria-label="Main navigation">
+          {(["Home", "Clubs", "Matches", "Profile"] as Tab[]).map((item) => (
+            <Button
+              key={item}
+              className={`nav-item ${tab === item ? "active" : ""}`}
+              onClick={() => setTab(item)}
+            >
+              <span className="nav-icon">
+                <Icon
+                  name={
+                    item === "Home"
+                      ? "home"
+                      : item === "Clubs"
+                        ? "clubs"
+                        : item === "Matches"
+                          ? "matches"
+                          : "user"
+                  }
+                />
+              </span>
+              <span>{item}</span>
+            </Button>
+          ))}
+        </nav>
+      )}
     </main>
   );
 }

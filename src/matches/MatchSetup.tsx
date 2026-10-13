@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Club } from "../lib/clubsApi";
 import { createMatch, type CricketMatch, type MatchPlayer, type MatchTeam } from "../lib/matchesApi";
+import { createId } from "../lib/id";
 import PageHeader from "../components/PageHeader";
 
 type SetupStep = "type" | "teams" | "rules" | "toss" | "review" | "openers";
 
 function namedTemporaryPlayers(prefix: string, names: string[]): MatchPlayer[] {
   return names.map((name, index) => ({
-    id: crypto.randomUUID(),
+    id: createId(),
     name: name.trim() || `${prefix} Player ${index + 1}`,
     source: "temporary" as const,
   }));

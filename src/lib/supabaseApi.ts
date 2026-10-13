@@ -1,4 +1,5 @@
 import { projectId } from "../../utils/supabase/info";
+import { createId } from "./id";
 import { supabase } from "./supabase";
 
 export type SavedMatchState = {
@@ -15,7 +16,7 @@ function getDeviceId() {
   const existing = localStorage.getItem("cricapp-device-id");
   if (existing) return existing;
 
-  const id = crypto.randomUUID();
+  const id = createId();
   localStorage.setItem("cricapp-device-id", id);
   return id;
 }
