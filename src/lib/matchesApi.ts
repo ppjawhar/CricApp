@@ -108,6 +108,10 @@ export type CricketMatch = {
     email?: string;
     role: "admin" | "organizer" | "member";
   }>;
+  playerAdditionOptions?: Record<
+    MatchTeam["id"],
+    { kind: "roster" | "temporary"; players: MatchPlayer[] }
+  >;
   corrections?: Array<{ id: string; deliveryId: string; original: unknown; replacement: unknown; actorId: string; createdAt: string }>;
 };
 
@@ -183,6 +187,36 @@ export async function changeMatchScorer(
   const result = await request(`/matches/${matchId}/scorer`, {
     method: "PUT",
     body: JSON.stringify({ scorerId }),
+  });
+  return result.match as CricketMatch;
+}
+
+export async function updateMatchPlayers(
+  matchId: string,
+  additions: Array<{
+    teamId: MatchTeam["id"];
+    name?: string;
+    playerId?: string;
+  }>,
+  renames: Array<{ playerId: string; name: string }>,
+  teamNames: Array<{ teamId: MatchTeam["id"]; name: string }>,
+  version: number,
+): Promise<CricketMatch> {
+  const result = await request(`/matches/${matchId}/players`, {
+    method: "PUT",
+    body: JSON.stringify({ additions, renames, teamNames, version }),
+  });
+  return result.match as CricketMatch;
+}
+
+export async function updateMatchRules(
+  matchId: string,
+  rules: Pick<MatchRules, "overs" | "lastMan" | "wicketLimits" | "venue">,
+  version: number,
+): Promise<CricketMatch> {
+  const result = await request(`/matches/${matchId}/rules`, {
+    method: "PUT",
+    body: JSON.stringify({ rules, version }),
   });
   return result.match as CricketMatch;
 }

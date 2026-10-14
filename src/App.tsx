@@ -438,7 +438,11 @@ function AuthenticatedApp() {
       )}
 
       {!keyboardOpen && (
-        <nav className="bottom-nav" aria-label="Main navigation">
+        <nav
+          className="bottom-nav"
+          aria-label="Main navigation"
+          data-active={tab}
+        >
           {(["Home", "Clubs", "Matches", "Profile"] as Tab[]).map((item) => (
             <Button
               key={item}
@@ -498,18 +502,26 @@ function Home({
 }) {
   const [matches, setMatches] = useState<CricketMatch[]>([]);
   const [clubs, setClubs] = useState<Club[]>([]);
+  const [matchesLoading, setMatchesLoading] = useState(true);
+  const [clubsLoading, setClubsLoading] = useState(true);
   const [choosingClub, setChoosingClub] = useState(false);
   const authorizedClubs = clubs.filter((club) =>
     ["admin", "organizer"].includes(club.membership?.role || ""),
   );
 
   useEffect(() => {
-    Promise.all([listMatches(), listClubs()])
-      .then(([matchData, clubData]) => {
-        setMatches(matchData);
-        setClubs(clubData.myClubs);
-      })
-      .catch(() => undefined);
+    let active = true;
+    listMatches()
+      .then((matchData) => active && setMatches(matchData))
+      .catch(() => undefined)
+      .finally(() => active && setMatchesLoading(false));
+    listClubs()
+      .then((clubData) => active && setClubs(clubData.myClubs))
+      .catch(() => undefined)
+      .finally(() => active && setClubsLoading(false));
+    return () => {
+      active = false;
+    };
   }, []);
 
   const activeMatch = matches.find((match) =>
@@ -555,7 +567,31 @@ function Home({
           </div>
         </section> */}
 
-        {activeMatch ? (
+        {matchesLoading ? (
+          <section
+            className="hero-card home-match-skeleton"
+            aria-label="Loading current match"
+            aria-busy="true"
+          >
+            <span className="home-skeleton-pill" />
+            <div className="home-skeleton-score">
+              <span>
+                <i />
+                <b />
+                <i />
+              </span>
+              <span>
+                <i />
+                <b />
+                <i />
+              </span>
+            </div>
+            <div className="home-skeleton-footer">
+              <span />
+              <b />
+            </div>
+          </section>
+        ) : activeMatch ? (
           <section className="hero-card">
             <img src={PHOTO} alt="Cricketers playing on a green field" />
             <div className="hero-shade" />
@@ -667,29 +703,44 @@ function Home({
               View all <Icon name="arrow" size={16} />
             </Button>
           </div>
-          <div className="club-list">
-            {clubs.slice(0, 3).map((club, index) => (
-              <Button
-                className="club-row"
-                key={club.id}
-                onClick={() => onOpenClub(club)}
-              >
-                <Avatar
-                  initials={club.initials}
-                  tone={index % 2 ? "cream" : "dark"}
-                />
-                <span className="club-copy">
-                  <strong>{club.name}</strong>
-                  <small>
-                    <Icon name="pin" size={14} />{" "}
-                    {club.location || "Location not added"} ·{" "}
-                    {club.players.length} players
-                  </small>
-                </span>
-                <Icon name="chevron" />
-              </Button>
-            ))}
-            {!clubs.length && (
+          <div
+            className={`club-list ${clubsLoading ? "home-club-list-skeleton" : ""}`}
+            aria-busy={clubsLoading}
+            aria-label={clubsLoading ? "Loading your clubs" : undefined}
+          >
+            {clubsLoading
+              ? Array.from({ length: 3 }, (_, index) => (
+                  <div className="home-club-skeleton-row" key={index}>
+                    <span className="home-club-skeleton-avatar" />
+                    <span className="home-club-skeleton-copy">
+                      <i />
+                      <i />
+                    </span>
+                    <span className="home-club-skeleton-arrow" />
+                  </div>
+                ))
+              : clubs.slice(0, 3).map((club, index) => (
+                  <Button
+                    className="club-row"
+                    key={club.id}
+                    onClick={() => onOpenClub(club)}
+                  >
+                    <Avatar
+                      initials={club.initials}
+                      tone={index % 2 ? "cream" : "dark"}
+                    />
+                    <span className="club-copy">
+                      <strong>{club.name}</strong>
+                      <small>
+                        <Icon name="pin" size={14} />{" "}
+                        {club.location || "Location not added"} ·{" "}
+                        {club.players.length} players
+                      </small>
+                    </span>
+                    <Icon name="chevron" />
+                  </Button>
+                ))}
+            {!clubsLoading && !clubs.length && (
               <div className="empty-note">
                 <span className="empty-ball" />
                 <div>

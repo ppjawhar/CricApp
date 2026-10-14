@@ -37,3 +37,25 @@ export function allowedDismissals(freeHit: boolean, extraType?: ExtraType): Dism
 export function maximumWickets(players: number, lastMan: boolean) {
   return Math.max(1, players - (lastMan ? 0 : 1));
 }
+
+export function wicketLimitAfterLastManToggle(
+  currentLimit: number,
+  enablingLastMan: boolean,
+  players: number,
+  wicketsTaken = 0,
+) {
+  const minimum = Math.max(1, wicketsTaken);
+  const maximum = maximumWickets(players, enablingLastMan);
+  const adjusted = currentLimit + (enablingLastMan ? 1 : -1);
+  return Math.min(maximum, Math.max(minimum, adjusted));
+}
+
+export function canChangeBowlerBeforeDelivery(
+  deliveries: Array<{ legal: boolean }>,
+  legalBalls: number,
+  ballsPerOver: number,
+) {
+  if (!deliveries.length) return true;
+  const lastDelivery = deliveries[deliveries.length - 1];
+  return lastDelivery.legal && legalBalls % ballsPerOver === 0;
+}

@@ -355,6 +355,10 @@ async function publicMatch(match: StoredMatch, userId: string) {
         role: "admin",
       },
       scorerOptions: [],
+      playerAdditionOptions: {
+        "team-a": { kind: "temporary", players: [] },
+        "team-b": { kind: "temporary", players: [] },
+      },
     }
   }
   const club = (await kv.get(clubKey(match.clubId))) as StoredClub | undefined
@@ -364,6 +368,12 @@ async function publicMatch(match: StoredMatch, userId: string) {
     getClubMembers(club),
   ])
   const scorerId = match.scoringOwnerId || match.createdBy
+  const usedPlayerIds = new Set(
+    match.teams.flatMap((team) => team.players.map((player) => player.id)),
+  )
+  const availableRosterPlayers = club.players
+    .filter((player) => player.status === "active" && !usedPlayerIds.has(player.id))
+    .map((player) => ({ id: player.id, name: player.name, source: "roster" as const }))
   return {
     ...match,
     permissions: {
@@ -375,6 +385,18 @@ async function publicMatch(match: StoredMatch, userId: string) {
       role: "member",
     },
     scorerOptions: canManageClub(role) ? members : [],
+    playerAdditionOptions: {
+      "team-a": {
+        kind: "roster",
+        players: scorerId === userId ? availableRosterPlayers : [],
+      },
+      "team-b": match.mode === "club-internal"
+        ? {
+          kind: "roster",
+          players: scorerId === userId ? availableRosterPlayers : [],
+        }
+        : { kind: "temporary", players: [] },
+    },
   }
 }
 
@@ -921,6 +943,189 @@ app.get(`${API_PREFIX}/matches/:matchId`, async (c) => {
   if (!await canReadMatch(match, userId))
     return c.json({ error: "You do not have access to this match." }, 403)
   return c.json({ match: await publicMatch(match, userId) })
+})
+
+app.put(`${API_PREFIX}/matches/:matchId/players`, async (c) => {
+  const userId = c.get("userId") as string
+  const match = (await kv.get(
+    matchKey(c.req.param("matchId")),
+  )) as StoredMatch | undefined
+  if (!match) return c.json({ error: "Match not found." }, 404)
+  if (!await canScoreMatch(match, userId))
+    return c.json({ error: "Only the assigned scorer can add match players." }, 403)
+  if (["completed", "abandoned"].includes(match.status))
+    return c.json({ error: "Players cannot be added after the match has ended." }, 409)
+  try {
+    const body = await readJson(c)
+    const currentVersion = match.version || 0
+    if (!Number.isInteger(body.version) || body.version !== currentVersion)
+      return c.json({
+        error: "This match changed on another session. Reload before continuing.",
+        code: "VERSION_CONFLICT",
+        match,
+      }, 409)
+    const additions = Array.isArray(body.additions) ? body.additions : []
+    const renames = Array.isArray(body.renames) ? body.renames : []
+    const teamNames = Array.isArray(body.teamNames) ? body.teamNames : []
+    if (!additions.length && !renames.length && !teamNames.length)
+      throw new Error("Make at least one team change.")
+    if (additions.length > 20 || renames.length > 60 || teamNames.length > 2)
+      throw new Error("Too many team changes were submitted at once.")
+
+    const club = match.clubId
+      ? await kv.get(clubKey(match.clubId)) as StoredClub | undefined
+      : undefined
+    const activeRoster = new Map(
+      (club?.players || [])
+        .filter((player) => player.status === "active")
+        .map((player) => [player.id, player]),
+    )
+    const usedPlayerIds = new Set(
+      match.teams.flatMap((team) => team.players.map((player) => player.id)),
+    )
+
+    const renamedPlayerIds = new Set<string>()
+    for (const rename of renames) {
+      if (typeof rename.playerId !== "string" || renamedPlayerIds.has(rename.playerId))
+        throw new Error("Each player can only be renamed once.")
+      const player = match.teams
+        .flatMap((team) => team.players)
+        .find((item) => item.id === rename.playerId)
+      if (!player) throw new Error("Player not found in this match.")
+      if (player.source !== "temporary")
+        throw new Error("Club roster player names must be updated from the club roster.")
+      player.name = cleanRequiredString(rename.name, "Player name", 80)
+      renamedPlayerIds.add(player.id)
+    }
+
+    const renamedTeamIds = new Set<string>()
+    for (const rename of teamNames) {
+      const team = match.teams.find((item) => item.id === rename.teamId)
+      if (!team || renamedTeamIds.has(rename.teamId))
+        throw new Error("Choose each team only once.")
+      const canRenameTeam = match.mode === "quick" ||
+        (match.mode === "club-external" && team.id === "team-b")
+      if (!canRenameTeam)
+        throw new Error("Club team names must be updated from club settings.")
+      team.name = cleanRequiredString(rename.name, "Team name", 80)
+      renamedTeamIds.add(team.id)
+    }
+
+    for (const addition of additions) {
+      const team = match.teams.find((item) => item.id === addition.teamId)
+      if (!team) throw new Error("Choose a valid team.")
+      if (team.players.length >= 30)
+        throw new Error(`${team.name} already has the maximum of 30 players.`)
+
+      const needsRosterPlayer = match.mode === "club-internal" ||
+        (match.mode === "club-external" && team.id === "team-a")
+      if (needsRosterPlayer) {
+        const playerId = cleanRequiredString(addition.playerId, "Player")
+        const player = activeRoster.get(playerId)
+        if (!player) throw new Error("Choose an active player from the club roster.")
+        if (usedPlayerIds.has(player.id))
+          throw new Error(`${player.name} is already included in this match.`)
+        team.players.push({ id: player.id, name: player.name, source: "roster" })
+        usedPlayerIds.add(player.id)
+      } else {
+        const name = cleanRequiredString(addition.name, "Player name", 80)
+        let id = crypto.randomUUID()
+        while (usedPlayerIds.has(id)) id = crypto.randomUUID()
+        team.players.push({ id, name, source: "temporary" })
+        usedPlayerIds.add(id)
+      }
+
+      const wicketLimits = (match.rules as any).wicketLimits
+      const wicketLimitKey = team.id === "team-a" ? "teamA" : "teamB"
+      const lastMan = Boolean((match.rules as any).lastMan)
+      const maximum = Math.max(1, team.players.length - (lastMan ? 0 : 1))
+      const currentLimit = Number(wicketLimits?.[wicketLimitKey] || maximum - 1)
+      ;(match.rules as any).wicketLimits = {
+        ...wicketLimits,
+        [wicketLimitKey]: Math.min(maximum, currentLimit + 1),
+      }
+    }
+
+    match.updatedAt = new Date().toISOString()
+    match.version = currentVersion + 1
+    await persistMatch(match)
+    return c.json({ match: await publicMatch(match, userId) })
+  } catch (error) {
+    return c.json({
+      error: error instanceof Error ? error.message : "Unable to add players.",
+    }, 400)
+  }
+})
+
+app.put(`${API_PREFIX}/matches/:matchId/rules`, async (c) => {
+  const userId = c.get("userId") as string
+  const match = (await kv.get(
+    matchKey(c.req.param("matchId")),
+  )) as StoredMatch | undefined
+  if (!match) return c.json({ error: "Match not found." }, 404)
+  if (!await canScoreMatch(match, userId))
+    return c.json({ error: "Only the assigned scorer can update playing rules." }, 403)
+  if (["completed", "abandoned"].includes(match.status))
+    return c.json({ error: "Playing rules cannot be changed after the match has ended." }, 409)
+  try {
+    const body = await readJson(c)
+    const currentVersion = match.version || 0
+    if (!Number.isInteger(body.version) || body.version !== currentVersion)
+      return c.json({
+        error: "This match changed on another session. Reload before continuing.",
+        code: "VERSION_CONFLICT",
+        match,
+      }, 409)
+    const rules = body.rules
+    if (!rules || typeof rules !== "object")
+      throw new Error("Playing rules are required.")
+    if (!Number.isInteger(rules.overs) || rules.overs < 1 || rules.overs > 100)
+      throw new Error("Overs must be a whole number from 1 to 100.")
+    if (typeof rules.lastMan !== "boolean")
+      throw new Error("Choose whether last-man batting is enabled.")
+
+    const ballsPerOver = Number((match.rules as any).ballsPerOver || 6)
+    const innings = Array.isArray((match.score as any)?.innings)
+      ? (match.score as any).innings
+      : []
+    const minimumOvers = Math.max(
+      1,
+      ...innings.map((item: any) => Math.ceil(Number(item.legalBalls || 0) / ballsPerOver)),
+    )
+    if (rules.overs < minimumOvers)
+      throw new Error(`Overs cannot be reduced below ${minimumOvers}; a team has already reached that over.`)
+
+    const limits = [rules.wicketLimits?.teamA, rules.wicketLimits?.teamB]
+    match.teams.forEach((team, index) => {
+      const wicketsTaken = Number(innings.find((item: any) => item.battingTeamId === team.id)?.wickets || 0)
+      const minimum = Math.max(1, wicketsTaken)
+      const maximum = Math.max(1, team.players.length - (rules.lastMan ? 0 : 1))
+      if (!Number.isInteger(limits[index]) || limits[index] < minimum || limits[index] > maximum)
+        throw new Error(`Wicket limit for ${team.name} must be between ${minimum} and ${maximum}.`)
+    })
+
+    let venue: string | undefined
+    if (typeof rules.venue === "string" && rules.venue.trim())
+      venue = cleanRequiredString(rules.venue, "Venue", 120)
+    else if (rules.venue !== undefined && typeof rules.venue !== "string")
+      throw new Error("Venue must be text.")
+
+    match.rules = {
+      ...match.rules,
+      overs: rules.overs,
+      lastMan: rules.lastMan,
+      wicketLimits: { teamA: limits[0], teamB: limits[1] },
+      venue,
+    }
+    match.updatedAt = new Date().toISOString()
+    match.version = currentVersion + 1
+    await persistMatch(match)
+    return c.json({ match: await publicMatch(match, userId) })
+  } catch (error) {
+    return c.json({
+      error: error instanceof Error ? error.message : "Unable to update playing rules.",
+    }, 400)
+  }
 })
 
 app.put(`${API_PREFIX}/matches/:matchId/scorer`, async (c) => {

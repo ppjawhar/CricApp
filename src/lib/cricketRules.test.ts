@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { allowedDismissals, bowlerConcededRuns, completedRunsForDelivery, isLegalDelivery, maximumWickets, nextFreeHit } from "./cricketRules.ts";
+import { allowedDismissals, bowlerConcededRuns, canChangeBowlerBeforeDelivery, completedRunsForDelivery, isLegalDelivery, maximumWickets, nextFreeHit, wicketLimitAfterLastManToggle } from "./cricketRules.ts";
 
 test("wide and no-ball replacement deliveries do not count as legal balls", () => {
   assert.equal(isLegalDelivery("wide"), false);
@@ -32,4 +32,17 @@ test("only run-out is accepted on a free hit", () => {
 test("last-man batting increases the maximum wicket limit", () => {
   assert.equal(maximumWickets(5, false), 4);
   assert.equal(maximumWickets(5, true), 5);
+});
+
+test("toggling last-man batting adjusts the current wicket limit", () => {
+  assert.equal(wicketLimitAfterLastManToggle(4, true, 5), 5);
+  assert.equal(wicketLimitAfterLastManToggle(5, false, 5), 4);
+  assert.equal(wicketLimitAfterLastManToggle(3, false, 5, 3), 3);
+});
+
+test("a bowler can only be changed before the first delivery of an over", () => {
+  assert.equal(canChangeBowlerBeforeDelivery([], 0, 6), true);
+  assert.equal(canChangeBowlerBeforeDelivery([{ legal: true }], 6, 6), true);
+  assert.equal(canChangeBowlerBeforeDelivery([{ legal: false }], 6, 6), false);
+  assert.equal(canChangeBowlerBeforeDelivery([{ legal: true }], 1, 6), false);
 });
