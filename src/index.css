@@ -258,17 +258,26 @@ h1, h2 { font-family: "Manrope"; letter-spacing: -.8px; }
 .members-tab-content .club-members-section { margin-top: 24px; }
 .club-member-list { margin-top: 13px; border: 1px solid var(--line); border-radius: 17px; overflow: hidden; background: white; }
 .member-empty { padding: 22px 14px; color: var(--muted); font-size: 9px; text-align: center; }
-.club-member-row { min-height: 76px; padding: 11px 12px; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; border-bottom: 1px solid var(--line); }
+.club-member-row { min-height: 82px; padding: 11px 12px; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; border-bottom: 1px solid var(--line); }
 .club-member-row:last-child { border-bottom: 0; }
 .club-member-row .avatar { width: 42px; height: 42px; border-radius: 13px; font-size: 10px; }
 .club-member-row > span { min-width: 0; }
 .club-member-row > span strong, .club-member-row > span small { display: block; }
 .club-member-row > span strong { overflow: hidden; color: var(--ink); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
-.club-member-row > span small { margin-top: 4px; color: var(--muted); font-size: 8px; }
-.club-member-row > b { padding: 6px 8px; border-radius: 99px; background: #edf3e5; color: #567a2d; font: 800 7px/1 "Manrope"; letter-spacing: .5px; text-transform: uppercase; }
-.club-member-row select { width: 108px; height: 38px; padding: 0 9px; border: 1px solid var(--line); border-radius: 10px; background: #fbfbf7; color: var(--ink); font: 700 9px/1 "DM Sans"; text-transform: capitalize; }
-.member-remove-button { grid-column: 2 / -1; justify-self: end; margin-top: -5px; padding: 4px 0; border: 0; background: transparent; color: #a7462a; font-size: 8px; font-weight: 700; cursor: pointer; }
-.member-remove-button:disabled, .club-member-row select:disabled { opacity: .55; cursor: wait; }
+.club-member-row > span small { margin-top: 3px; color: var(--muted); font-size: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.member-row-side { display: flex; flex-direction: column; align-items: flex-end; gap: 7px; }
+.member-row-side > b { padding: 6px 8px; border-radius: 99px; background: #edf3e5; color: #567a2d; font: 800 7px/1 "Manrope"; letter-spacing: .5px; text-transform: uppercase; }
+.member-row-actions { display: flex; gap: 5px; }
+.member-icon-button { width: 32px; height: 32px; padding: 0; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 10px; background: white; color: #60706a; cursor: pointer; }
+.member-icon-button.danger { border-color: #ead2ca; background: #fff7f4; color: #a7462a; }
+.member-icon-button:disabled { opacity: .55; cursor: wait; }
+.member-editor-sheet > label { margin-top: 17px; }
+.member-sheet-profile { min-height: 82px; padding: 12px; display: flex; align-items: center; gap: 12px; border: 1px solid var(--line); border-radius: 15px; background: white; }
+.member-sheet-profile .avatar { width: 48px; height: 48px; flex: 0 0 auto; border-radius: 14px; }
+.member-sheet-profile > span { min-width: 0; }
+.member-sheet-profile strong, .member-sheet-profile small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.member-sheet-profile strong { font-size: 12px; }
+.member-sheet-profile small { margin-top: 4px; color: var(--muted); font-size: 9px; }
 .pending-member-list { margin-top: 12px; padding: 12px; border-radius: 15px; background: #f4f4ee; }
 .pending-member-list > span { display: block; margin-bottom: 5px; color: var(--muted); font: 800 8px/1 "Manrope"; letter-spacing: 1px; }
 .pending-member-list > div { min-height: 46px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid #dedfd8; }

@@ -22,6 +22,7 @@ export type ClubInvitation = {
 
 export type ClubMember = {
   userId: string;
+  name?: string;
   email?: string;
   role: "admin" | "organizer" | "member";
   joinedAt: string;

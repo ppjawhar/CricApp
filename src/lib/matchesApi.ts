@@ -100,11 +100,13 @@ export type CricketMatch = {
   permissions?: { canScore: boolean; canManageScorer: boolean };
   scorer?: {
     userId: string;
+    name?: string;
     email?: string;
     role: "admin" | "organizer" | "member";
   };
   scorerOptions?: Array<{
     userId: string;
+    name?: string;
     email?: string;
     role: "admin" | "organizer" | "member";
   }>;

@@ -2104,7 +2104,7 @@ export default function ScoringPage({
               >
                 {scorerOptions.map((member) => (
                   <option value={member.userId} key={member.userId}>
-                    {member.email || `${member.role} member`} · {member.role}
+                    {member.name ? `${member.name}${member.email ? ` · ${member.email}` : ""}` : member.email || `${member.role} member`} · {member.role}
                   </option>
                 ))}
               </select>

@@ -45,6 +45,7 @@ type IconName =
   | "pin"
   | "calendar"
   | "edit"
+  | "trash"
   | "settings";
 
 const iconPaths: Record<IconName, React.ReactNode> = {
@@ -151,6 +152,12 @@ const iconPaths: Record<IconName, React.ReactNode> = {
     <>
       <path d="M12 20h9" />
       <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z" />
+    </>
+  ),
+  trash: (
+    <>
+      <path d="M4 7h16M9 7V4h6v3M7 7l1 14h8l1-14" />
+      <path d="M10 11v6M14 11v6" />
     </>
   ),
   settings: (
@@ -859,6 +866,8 @@ function Clubs({
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] =
     useState<ClubInvitation["role"]>("member");
+  const [editingMember, setEditingMember] = useState<ClubMember | null>(null);
+  const [memberRole, setMemberRole] = useState<ClubMember["role"]>("member");
 
   useEffect(() => {
     let active = true;
@@ -1065,24 +1074,41 @@ function Clubs({
     member: ClubMember,
     role: ClubMember["role"],
   ) {
-    if (!selectedClub || member.role === role) return;
+    if (!selectedClub) return false;
+    if (member.role === role) return true;
     setSaving(true);
     setError("");
     try {
       await updateClubMemberRole(selectedClub.id, member.userId, role);
       setSelectedClub(await getClub(selectedClub.id));
+      return true;
     } catch (reason) {
       setError(
         reason instanceof Error ? reason.message : "Unable to update member",
       );
+      return false;
     } finally {
       setSaving(false);
     }
   }
 
+  function openMemberEditor(member: ClubMember) {
+    setEditingMember(member);
+    setMemberRole(member.role);
+    setError("");
+  }
+
+  async function submitMemberRole(event: React.FormEvent) {
+    event.preventDefault();
+    if (!editingMember) return;
+    if (await changeMemberRole(editingMember, memberRole)) {
+      setEditingMember(null);
+    }
+  }
+
   async function removeMember(member: ClubMember) {
     if (!selectedClub) return;
-    const label = member.email || "this member";
+    const label = member.name || member.email || "this member";
     if (!window.confirm(`Remove ${label} from ${selectedClub.name}?`)) return;
     setSaving(true);
     setError("");
@@ -1351,46 +1377,44 @@ function Clubs({
                   {(selectedClub.members || []).map((member) => (
                     <div className="club-member-row" key={member.userId}>
                       <Avatar
-                        initials={getInitials(member.email || member.role)}
+                        initials={getInitials(member.name || member.email || member.role)}
                         tone="cream"
                       />
                       <span>
-                        <strong>{member.email || "Club member"}</strong>
+                        <strong>{member.name || "Club member"}</strong>
+                        <small>{member.email || "Email unavailable"}</small>
                         <small>
                           Joined {new Date(member.joinedAt).toLocaleDateString()}
                           {member.isCreator ? " · Club creator" : ""}
                         </small>
                       </span>
-                      {isAdmin ? (
-                        <select
-                          value={member.role}
-                          disabled={saving}
-                          onChange={(event) =>
-                            void changeMemberRole(
-                              member,
-                              event.target.value as ClubMember["role"],
-                            )
-                          }
-                          aria-label={`Role for ${member.email || "club member"}`}
-                        >
-                          <option value="member">Member</option>
-                          <option value="organizer">Organizer</option>
-                          <option value="admin">Admin</option>
-                        </select>
-                      ) : (
+                      <div className="member-row-side">
                         <b>{member.role}</b>
-                      )}
-                      {isAdmin && !member.isCreator && (
-                        <button
-                          type="button"
-                          className="member-remove-button"
-                          onClick={() => void removeMember(member)}
-                          disabled={saving}
-                          aria-label={`Remove ${member.email || "club member"}`}
-                        >
-                          Remove
-                        </button>
-                      )}
+                        {isAdmin && (
+                          <span className="member-row-actions">
+                            <button
+                              type="button"
+                              className="member-icon-button"
+                              onClick={() => openMemberEditor(member)}
+                              disabled={saving}
+                              aria-label={`Edit ${member.name || member.email || "club member"}`}
+                            >
+                              <Icon name="edit" size={16} />
+                            </button>
+                            {!member.isCreator && (
+                              <button
+                                type="button"
+                                className="member-icon-button danger"
+                                onClick={() => void removeMember(member)}
+                                disabled={saving}
+                                aria-label={`Remove ${member.name || member.email || "club member"}`}
+                              >
+                                <Icon name="trash" size={16} />
+                              </button>
+                            )}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   ))}
                   {!selectedClub.members?.length && (
@@ -1596,6 +1620,63 @@ function Clubs({
                   </p>
                 </div>
               )}
+            </div>
+          )}
+
+          {editingMember && (
+            <div
+              className="sheet-backdrop"
+              onMouseDown={() => !saving && setEditingMember(null)}
+            >
+              <form
+                className="player-sheet member-editor-sheet"
+                onSubmit={submitMemberRole}
+                onMouseDown={(event) => event.stopPropagation()}
+              >
+                <div className="sheet-handle" />
+                <div className="sheet-title">
+                  <div>
+                    <span className="eyebrow">CLUB MEMBER</span>
+                    <h2>Edit member</h2>
+                  </div>
+                  <Button
+                    className="sheet-close"
+                    onClick={() => setEditingMember(null)}
+                    disabled={saving}
+                  >
+                    ×
+                  </Button>
+                </div>
+                <div className="member-sheet-profile">
+                  <Avatar
+                    initials={getInitials(editingMember.name || editingMember.email || editingMember.role)}
+                    tone="cream"
+                  />
+                  <span>
+                    <strong>{editingMember.name || "Club member"}</strong>
+                    <small>{editingMember.email || "Email unavailable"}</small>
+                    <small>
+                      Joined {new Date(editingMember.joinedAt).toLocaleDateString()}
+                      {editingMember.isCreator ? " · Club creator" : ""}
+                    </small>
+                  </span>
+                </div>
+                <label>
+                  <span>Club role</span>
+                  <select
+                    value={memberRole}
+                    onChange={(event) => setMemberRole(event.target.value as ClubMember["role"])}
+                  >
+                    <option value="member">Member</option>
+                    <option value="organizer">Organizer</option>
+                    <option value="admin">Admin</option>
+                  </select>
+                </label>
+                {error && <div className="club-error">{error}</div>}
+                <button className="club-submit" type="submit" disabled={saving}>
+                  {saving ? "Saving…" : "Save member role"}
+                </button>
+              </form>
             </div>
           )}
 

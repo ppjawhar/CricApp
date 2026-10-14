@@ -5,7 +5,7 @@ import { logger } from "npm:hono/logger"
 import * as kv from "./kv_store.tsx"
 
 const API_PREFIX = "/cricapp-api"
-const app = new Hono<{ Variables: { userId: string; userEmail: string } }>()
+const app = new Hono<{ Variables: { userId: string; userEmail: string; userName: string } }>()
 
 type ClubRole = "admin" | "organizer" | "scorer" | "member"
 type StoredPlayer = {
@@ -39,6 +39,7 @@ type ClubMembership = {
   userId: string
   joinedAt: string
   email?: string
+  name?: string
 }
 type ClubInvitation = {
   id: string
@@ -133,6 +134,8 @@ app.use(`${API_PREFIX}/*`, async (c, next) => {
     return c.json({ error: "Your session is invalid or has expired." }, 401)
   c.set("userId", data.user.id)
   c.set("userEmail", (data.user.email || "").toLowerCase())
+  const rawUserName = data.user.user_metadata?.full_name || data.user.user_metadata?.name
+  c.set("userName", typeof rawUserName === "string" ? cleanOptionalString(rawUserName, 100) || "" : "")
   await next()
 })
 
@@ -330,16 +333,51 @@ async function getClubMembers(club: StoredClub) {
       .filter((membership) => membership.clubId === club.id)
       .map((membership) => [membership.userId, membership]),
   )
-  return Object.entries(club.memberships || {}).map(([userId, embeddedRole]) => {
+  const members = Object.entries(club.memberships || {}).map(([userId, embeddedRole]) => {
     const membership = byUser.get(userId)
     return {
       userId,
       email: membership?.email,
+      name: membership?.name,
       role: embeddedRole === "scorer" ? "member" as const : embeddedRole,
       joinedAt: membership?.joinedAt || club.createdAt,
       isCreator: userId === club.createdBy,
     }
   })
+  const missingProfiles = members.filter((member) => !member.email || !member.name)
+  if (!missingProfiles.length) return members
+
+  const supabase = createClient(
+    Deno.env.get("SUPABASE_URL")!,
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+    { auth: { persistSession: false, autoRefreshToken: false } },
+  )
+  const profiles = new Map(
+    (await Promise.all(missingProfiles.map(async (member) => {
+      const { data } = await supabase.auth.admin.getUserById(member.userId)
+      const user = data.user
+      if (!user) return undefined
+      return [member.userId, {
+        email: user.email?.toLowerCase(),
+        name: cleanOptionalString(user.user_metadata?.full_name || user.user_metadata?.name, 100),
+      }] as const
+    }))).filter((entry): entry is readonly [string, { email?: string; name?: string }] => Boolean(entry)),
+  )
+  const enriched = members.map((member) => ({
+    ...member,
+    email: member.email || profiles.get(member.userId)?.email,
+    name: member.name || profiles.get(member.userId)?.name,
+  }))
+  await Promise.all(enriched.map(async (member) => {
+    const storedMembership = byUser.get(member.userId)
+    if (!storedMembership || (storedMembership.email === member.email && storedMembership.name === member.name)) return
+    await kv.set(membershipKey(member.userId, club.id), {
+      ...storedMembership,
+      email: member.email,
+      name: member.name,
+    })
+  }))
+  return enriched
 }
 
 async function publicMatch(match: StoredMatch, userId: string) {
@@ -456,6 +494,7 @@ app.post(`${API_PREFIX}/clubs`, async (c) => {
       userId,
       joinedAt: club.createdAt,
       email: c.get("userEmail") as string,
+      name: (c.get("userName") as string) || undefined,
     }
     await kv.mset([clubKey(club.id), membershipKey(userId, club.id)], [
       club,
@@ -465,6 +504,7 @@ app.post(`${API_PREFIX}/clubs`, async (c) => {
       club: publicClub(club, "admin", [], [{
         userId,
         email: membership.email,
+        name: membership.name,
         role: "admin",
         joinedAt: membership.joinedAt,
         isCreator: true,
@@ -490,31 +530,13 @@ app.get(`${API_PREFIX}/clubs/:clubId`, async (c) => {
     getClubMembers(club),
     kv.getByPrefix("invitation:") as Promise<ClubInvitation[]>,
   ])
-  let visibleMembers = role
+  const visibleMembers = role
     ? members.map((member) =>
-      member.userId === userId && !member.email
-        ? { ...member, email: c.get("userEmail") as string }
+      member.userId === userId && (!member.email || !member.name)
+        ? { ...member, email: member.email || c.get("userEmail") as string, name: member.name || (c.get("userName") as string) || undefined }
         : member
     )
     : []
-  const membersWithoutEmail = visibleMembers.filter((member) => !member.email)
-  if (membersWithoutEmail.length) {
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-      { auth: { persistSession: false, autoRefreshToken: false } },
-    )
-    const recoveredEmails = new Map(
-      (await Promise.all(membersWithoutEmail.map(async (member) => {
-        const { data } = await supabase.auth.admin.getUserById(member.userId)
-        return [member.userId, data.user?.email?.toLowerCase()] as const
-      }))).filter((entry): entry is readonly [string, string] => Boolean(entry[1])),
-    )
-    visibleMembers = visibleMembers.map((member) => ({
-      ...member,
-      email: member.email || recoveredEmails.get(member.userId),
-    }))
-  }
   const pendingInvitations = canManageClub(role)
     ? invitations.filter(
         (invitation) =>
@@ -716,7 +738,7 @@ app.post(`${API_PREFIX}/invitations/:invitationId/respond`, async (c) => {
       if (!club) return c.json({ error: "This club no longer exists." }, 410)
       club.memberships = { ...(club.memberships || {}), [userId]: invitation.role }
       invitation.acceptedUserId = userId
-      const membership: ClubMembership = { role: invitation.role, clubId: club.id, userId, joinedAt: invitation.respondedAt!, email }
+      const membership: ClubMembership = { role: invitation.role, clubId: club.id, userId, joinedAt: invitation.respondedAt!, email, name: (c.get("userName") as string) || undefined }
       keys.push(clubKey(club.id), membershipKey(userId, club.id))
       values.push(club, membership)
     }
