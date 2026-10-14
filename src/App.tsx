@@ -784,7 +784,7 @@ function Clubs({
   const [myClubs, setMyClubs] = useState<Club[]>([]);
   const [selectedClub, setSelectedClub] = useState<Club | null>(initialClub ?? null);
   const [detailTab, setDetailTab] = useState<
-    "overview" | "roster" | "matches" | "stats"
+    "overview" | "roster" | "matches" | "stats" | "members"
   >("overview");
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
@@ -1136,6 +1136,9 @@ function Clubs({
       selectedClub.membership?.role === "admin" ||
       selectedClub.membership?.role === "organizer";
     const isAdmin = selectedClub.membership?.role === "admin";
+    const detailTabs = selectedClub.membership
+      ? (["overview", "roster", "matches", "stats", "members"] as const)
+      : (["overview", "roster", "matches", "stats"] as const);
     return (
       <>
         <PageHeader
@@ -1193,18 +1196,18 @@ function Clubs({
               </Button>
             )}
           </section>
-          <div className="club-tabs">
-            {(["overview", "roster", "matches", "stats"] as const).map(
-              (tab) => (
-                <Button
-                  key={tab}
-                  className={detailTab === tab ? "active" : ""}
-                  onClick={() => setDetailTab(tab)}
-                >
-                  {tab === "roster" ? "Players" : tab}
-                </Button>
-              ),
-            )}
+          <div
+            className={`club-tabs ${detailTabs.length === 4 ? "four-tabs" : ""}`}
+          >
+            {detailTabs.map((tab) => (
+              <Button
+                key={tab}
+                className={detailTab === tab ? "active" : ""}
+                onClick={() => setDetailTab(tab)}
+              >
+                {tab === "roster" ? "Players" : tab}
+              </Button>
+            ))}
           </div>
           {error && <div className="club-error detail-error">{error}</div>}
 
@@ -1262,6 +1265,11 @@ function Clubs({
                   </div>
                 )}
               </section>
+            </div>
+          )}
+
+          {detailTab === "members" && (
+            <div className="club-tab-content members-tab-content">
               {canEdit && (
                 <button
                   type="button"
@@ -1327,6 +1335,7 @@ function Clubs({
                           className="member-remove-button"
                           onClick={() => void removeMember(member)}
                           disabled={saving}
+                          aria-label={`Remove ${member.email || "club member"}`}
                         >
                           Remove
                         </button>

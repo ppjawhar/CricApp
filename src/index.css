@@ -218,12 +218,14 @@ h1, h2 { font-family: "Manrope"; letter-spacing: -.8px; }
 .club-detail-title .avatar { width: 58px; height: 58px; border-radius: 18px; font-size: 16px; }
 .club-detail-title h2 { font-size: 20px; margin: 5px 0; }
 .club-detail-title p { display: flex; align-items: center; gap: 4px; color: rgba(255,255,255,.56); font-size: 10px; }
-.club-tabs { position: sticky; top: -27px; z-index: 12; display: grid; grid-template-columns: repeat(4,1fr); margin: 20px 0 0; border-bottom: 1px solid var(--line); background: var(--paper); }
+.club-tabs { position: sticky; top: -27px; z-index: 12; display: grid; grid-template-columns: repeat(5,1fr); margin: 20px 0 0; border-bottom: 1px solid var(--line); background: var(--paper); }
+.club-tabs.four-tabs { grid-template-columns: repeat(4,1fr); }
 .club-tabs button { min-height: 46px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); font-size: 10px; font-weight: 700; text-transform: capitalize; cursor: pointer; }
 .club-tabs button.active { color: var(--ink); border-bottom-color: #76a739; }
 .club-tab-content { padding-top: 24px; animation: auth-in .22s ease-out; }
 .detail-section { margin-bottom: 27px; }
 .club-members-section { padding-top: 2px; }
+.members-tab-content .club-members-section { margin-top: 24px; }
 .club-member-list { margin-top: 13px; border: 1px solid var(--line); border-radius: 17px; overflow: hidden; background: white; }
 .member-empty { padding: 22px 14px; color: var(--muted); font-size: 9px; text-align: center; }
 .club-member-row { min-height: 76px; padding: 11px 12px; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; border-bottom: 1px solid var(--line); }
