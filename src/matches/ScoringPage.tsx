@@ -30,6 +30,7 @@ import {
 import { createId } from "../lib/id";
 import useConfirmSheet from "../components/ConfirmSheet";
 import PageHeader from "../components/PageHeader";
+import { ScorerPickerSheet } from "../components/ScorerPicker";
 
 type Phase =
   | "live"
@@ -239,6 +240,9 @@ export default function ScoringPage({
   );
   const [scorerOptions, setScorerOptions] = useState(match.scorerOptions || []);
   const [changingScorer, setChangingScorer] = useState(false);
+  const assignedScorer =
+    scorerOptions.find((member) => member.userId === scorerId) ||
+    (match.scorer?.userId === scorerId ? match.scorer : undefined);
   const [editingTeams, setEditingTeams] = useState(false);
   const [savingTeams, setSavingTeams] = useState(false);
   const [editingRules, setEditingRules] = useState(false);
@@ -1056,18 +1060,20 @@ export default function ScoringPage({
     }
   }
 
-  async function assignScorer() {
-    if (!scorerId || changingScorer) return;
+  async function assignScorer(nextScorerId: string) {
+    if (!nextScorerId || changingScorer) return;
     setChangingScorer(true);
     try {
       if (access.canScore) await syncChain.current;
-      const updated = await changeMatchScorer(match.id, scorerId);
+      const updated = await changeMatchScorer(match.id, nextScorerId);
       versionRef.current = updated.version || versionRef.current;
       setAccess({
         canScore: updated.permissions?.canScore ?? false,
         canManageScorer: updated.permissions?.canManageScorer ?? false,
       });
-      setScorerId(updated.scoringOwnerId || updated.scorer?.userId || scorerId);
+      setScorerId(
+        updated.scoringOwnerId || updated.scorer?.userId || nextScorerId,
+      );
       setScorerOptions(updated.scorerOptions || scorerOptions);
       setSheet(null);
       setToast("Match scorer updated");
@@ -1589,7 +1595,7 @@ export default function ScoringPage({
                             <span className="score-action-copy">
                               <strong>Change scorer</strong>
                               <small>
-                                Assign exclusive scoring access to a club member
+                                Currently {assignedScorer?.name || assignedScorer?.email || "assigned club member"}
                               </small>
                             </span>
                             <span
@@ -2243,49 +2249,15 @@ export default function ScoringPage({
         </div>
       )}
       {sheet === "scorer" && (
-        <div
-          className="score-sheet-backdrop"
-          onMouseDown={() => setSheet(null)}
-        >
-          <div
-            className="score-sheet"
-            onMouseDown={(event) => event.stopPropagation()}
-          >
-            <div className="sheet-handle" />
-            <span className="score-sheet-kicker">MATCH ACCESS</span>
-            <h2>Change scorer</h2>
-            <p>
-              Only the selected club member can update this match. Everyone else
-              keeps view-only access.
-            </p>
-            <label>
-              <span>Assigned scorer</span>
-              <select
-                value={scorerId}
-                onChange={(event) => setScorerId(event.target.value)}
-              >
-                {scorerOptions.map((member) => (
-                  <option value={member.userId} key={member.userId}>
-                    {member.name
-                      ? `${member.name}${
-                          member.email ? ` · ${member.email}` : ""
-                        }`
-                      : member.email || `${member.role} member`}{" "}
-                    · {member.role}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button
-              type="button"
-              className="score-primary-action"
-              disabled={!scorerId || changingScorer}
-              onClick={() => void assignScorer()}
-            >
-              {changingScorer ? "Updating scorer…" : "Assign scorer"}
-            </button>
-          </div>
-        </div>
+        <ScorerPickerSheet
+          currentScorer={assignedScorer}
+          options={scorerOptions}
+          busy={changingScorer}
+          onDismiss={() => {
+            if (!changingScorer) setSheet(null);
+          }}
+          onSelect={(nextScorerId) => void assignScorer(nextScorerId)}
+        />
       )}
       {access.canScore && changingBowler && (
         <SelectionSheet

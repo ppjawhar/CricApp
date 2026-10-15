@@ -3,6 +3,10 @@ import type { Club } from "../lib/clubsApi";
 import { createMatch, type CricketMatch, type MatchPlayer, type MatchTeam } from "../lib/matchesApi";
 import { createId } from "../lib/id";
 import PageHeader from "../components/PageHeader";
+import {
+  AssignedScorerCard,
+  ScorerPickerSheet,
+} from "../components/ScorerPicker";
 
 type SetupStep = "type" | "teams" | "rules" | "toss" | "review" | "openers";
 
@@ -69,8 +73,20 @@ export default function MatchSetup({
   );
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [scorerSheetOpen, setScorerSheetOpen] = useState(false);
 
   const activeRoster = useMemo(() => club?.players.filter((player) => player.status === "active") ?? [], [club]);
+  const scorerOptions = club?.members || [];
+  const assignedScorer =
+    scorerOptions.find((member) => member.userId === scorerId) ||
+    (scorerId
+      ? {
+          userId: scorerId,
+          name: "Club admin",
+          email: undefined,
+          role: "admin" as const,
+        }
+      : undefined);
   const steps: SetupStep[] = entry === "club" ? ["type", "teams", "rules", "toss", "review", "openers"] : ["teams", "rules", "toss", "review", "openers"];
   const stepIndex = steps.indexOf(step);
 
@@ -330,7 +346,7 @@ export default function MatchSetup({
           <div className="rules-grid wicket-limit-grid"><NumberField label={`${teams?.[0].name || "Team A"} wicket limit`} value={wicketLimitA} onChange={setWicketLimitA} /><NumberField label={`${teams?.[1].name || "Team B"} wicket limit`} value={wicketLimitB} onChange={setWicketLimitB} /></div>
           <p className="rules-explanation">Innings end at the wicket limit, the over limit, a successful chase or a confirmed manual end.</p>
           <div className="team-name-row"><label><span>Venue</span><input value={venue} onChange={(event) => setVenue(event.target.value)} placeholder="Optional" /></label><label><span>Match date</span><input type="date" value={scheduledDate} onChange={(event) => setScheduledDate(event.target.value)} /></label></div>
-          {mode !== "quick" && <label className="match-scorer-field"><span>Assigned scorer</span><select value={scorerId} onChange={(event) => setScorerId(event.target.value)}>{(club?.members || []).map((member) => <option key={member.userId} value={member.userId}>{member.name ? `${member.name}${member.email ? ` · ${member.email}` : ""}` : member.email || `${member.role} member`} · {member.role}</option>)}</select><small>Only this person can update the live score. Admins and organizers can change the scorer later.</small></label>}
+          {mode !== "quick" && <div className="match-scorer-field"><span>Scoring access</span><AssignedScorerCard scorer={assignedScorer} onEdit={() => setScorerSheetOpen(true)} /><small>Only this person can update the live score. Admins and organizers can change the scorer later.</small></div>}
           <SetupError message={error} />
           <div className="setup-footer-buttons"><button type="button" className="setup-secondary" onClick={() => setStep("teams")}>Back</button><button type="button" className="setup-primary" onClick={continueFromRules}>Continue to toss <span>→</span></button></div>
         </div>}
@@ -349,7 +365,7 @@ export default function MatchSetup({
         {step === "review" && teams && sides && <div className="setup-section">
           <span className="setup-kicker">READY TO PLAY</span><h1>Review your match</h1><p>Lineups and rules lock when the first delivery is scored.</p>
           <div className="review-versus"><div><span>{teams[0].players.length} PLAYERS</span><strong>{teams[0].name}</strong></div><b>VS</b><div><span>{teams[1].players.length} PLAYERS</span><strong>{teams[1].name}</strong></div></div>
-          <div className="review-details"><div><span>FORMAT</span><strong>{overs} overs · {ballsPerOver} balls</strong></div><div><span>TOSS</span><strong>{teams.find((team) => team.id === tossWinner)?.name} chose to {decision}</strong></div><div><span>VENUE</span><strong>{venue || "Not specified"}</strong></div><div><span>FIRST INNINGS</span><strong>{sides.batting.name} batting</strong></div>{mode !== "quick" && <div><span>SCORER</span><strong>{club?.members?.find((member) => member.userId === scorerId)?.email || "Club admin"}</strong></div>}</div>
+          <div className="review-details"><div><span>FORMAT</span><strong>{overs} overs · {ballsPerOver} balls</strong></div><div><span>TOSS</span><strong>{teams.find((team) => team.id === tossWinner)?.name} chose to {decision}</strong></div><div><span>VENUE</span><strong>{venue || "Not specified"}</strong></div><div><span>FIRST INNINGS</span><strong>{sides.batting.name} batting</strong></div>{mode !== "quick" && <div><span>SCORER</span><strong>{assignedScorer?.name || assignedScorer?.email || "Club admin"}</strong></div>}</div>
           <div className="rules-badges"><span className={freeHit ? "on" : ""}>Free hit {freeHit ? "on" : "off"}</span><span className={lastMan ? "on" : ""}>Last man {lastMan ? "on" : "off"}</span></div>
           <SetupError message={error} />
           <div className="setup-footer-buttons"><button type="button" className="setup-secondary" onClick={() => setStep("toss")}>Back</button><button type="button" className="setup-primary create-match-final" onClick={continueToOpeners}>Choose opening players <span>→</span></button></div>
@@ -363,6 +379,17 @@ export default function MatchSetup({
           <div className="setup-footer-buttons"><button type="button" className="setup-secondary" onClick={() => setStep("review")}>Back</button><button type="button" className="setup-primary create-match-final" onClick={saveMatch} disabled={saving}>{saving ? "Creating match…" : "Create & start scoring"} {!saving && <span>→</span>}</button></div>
         </div>}
       </section>
+      {scorerSheetOpen && (
+        <ScorerPickerSheet
+          currentScorer={assignedScorer}
+          options={scorerOptions}
+          onDismiss={() => setScorerSheetOpen(false)}
+          onSelect={(nextScorerId) => {
+            setScorerId(nextScorerId);
+            setScorerSheetOpen(false);
+          }}
+        />
+      )}
     </main>
   );
 }
