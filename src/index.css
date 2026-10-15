@@ -312,8 +312,7 @@ h1, h2 { font-family: "Manrope"; letter-spacing: -.8px; }
 .detail-player strong { font-size: 12px; }
 .detail-player small { color: var(--muted); font-size: 9px; margin-top: 3px; text-transform: capitalize; }
 .player-number { color: #a0a6a1; font: 700 9px/1 "Manrope"; }
-.edit-player-button { width: 40px; height: 40px; flex: 0 0 auto; padding: 0; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 12px; background: white; color: #65706a; cursor: pointer; }
-.edit-player-button:hover { color: var(--green-deep); border-color: #b9cba4; background: #f5faee; }
+.player-row-actions { display: flex; flex: 0 0 auto; gap: 6px; }
 .archived-player { opacity: .58; }
 .archived-player .avatar { filter: grayscale(1); }
 .detail-error { margin-top: 18px; }

@@ -677,6 +677,26 @@ app.put(`${API_PREFIX}/clubs/:clubId/players/:playerId`, async (c) => {
   }
 })
 
+app.delete(`${API_PREFIX}/clubs/:clubId/players/:playerId`, async (c) => {
+  const userId = c.get("userId") as string
+  const club = await getClubOrResponse(c, c.req.param("clubId"))
+  if (isResponse(club)) return club
+  const role = await getClubRole(club, userId)
+  if (!canManageClub(role))
+    return c.json(
+      { error: "You do not have permission to manage this roster." },
+      403,
+    )
+  const index = club.players.findIndex(
+    (player) => player.id === c.req.param("playerId"),
+  )
+  if (index < 0) return c.json({ error: "Player not found." }, 404)
+  club.players.splice(index, 1)
+  await kv.set(clubKey(club.id), club)
+  const matches = (await kv.getByPrefix("match:")) as StoredMatch[]
+  return c.json({ club: publicClub(club, role, matches) })
+})
+
 app.post(`${API_PREFIX}/clubs/:clubId/invitations`, async (c) => {
   const userId = c.get("userId") as string
   const club = await getClubOrResponse(c, c.req.param("clubId"))

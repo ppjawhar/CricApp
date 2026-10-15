@@ -9,6 +9,7 @@ import {
   listClubs,
   listInvitations,
   removeClubMember,
+  removeClubPlayer,
   respondToInvitation,
   updateClub,
   updateClubMemberRole,
@@ -1032,6 +1033,32 @@ function Clubs({
     setAddingPlayer(true);
   }
 
+  async function removePlayer(player: ClubPlayer) {
+    if (!selectedClub) return;
+    const confirmed = await confirm({
+      title: "Remove player?",
+      message: `${player.name} will be removed from this club and will no longer be available for future lineups. Existing match scorecards will keep their saved information.`,
+      confirmLabel: "Remove player",
+      tone: "danger",
+    });
+    if (!confirmed) return;
+    setSaving(true);
+    setError("");
+    try {
+      const club = await removeClubPlayer(selectedClub.id, player.id);
+      setSelectedClub(club);
+      setMyClubs((current) =>
+        current.map((item) => (item.id === club.id ? club : item)),
+      );
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : "Unable to remove player",
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
   function openClubSettings() {
     if (!selectedClub) return;
     setEditName(selectedClub.name);
@@ -1544,13 +1571,24 @@ function Clubs({
                         </small>
                       </div>
                       {canEdit ? (
-                        <Button
-                          className="edit-player-button"
-                          onClick={() => openEditPlayer(player)}
-                          ariaLabel={`Edit ${player.name}`}
-                        >
-                          <Icon name="edit" size={18} />
-                        </Button>
+                        <span className="player-row-actions">
+                          <Button
+                            className="member-icon-button"
+                            onClick={() => openEditPlayer(player)}
+                            ariaLabel={`Edit ${player.name}`}
+                            disabled={saving}
+                          >
+                            <Icon name="edit" size={16} />
+                          </Button>
+                          <Button
+                            className="member-icon-button danger"
+                            onClick={() => void removePlayer(player)}
+                            ariaLabel={`Remove ${player.name}`}
+                            disabled={saving}
+                          >
+                            <Icon name="trash" size={16} />
+                          </Button>
+                        </span>
                       ) : (
                         <span className="available-dot" />
                       )}

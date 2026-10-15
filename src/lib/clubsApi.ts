@@ -143,6 +143,16 @@ export async function updateClubPlayer(
   return result.club as Club;
 }
 
+export async function removeClubPlayer(
+  clubId: string,
+  playerId: string,
+): Promise<Club> {
+  const result = await request(`/clubs/${clubId}/players/${playerId}`, {
+    method: "DELETE",
+  });
+  return result.club as Club;
+}
+
 export async function inviteClubMember(clubId: string, email: string, role: ClubInvitation["role"]): Promise<ClubInvitation> {
   const result = await request(`/clubs/${clubId}/invitations`, { method: "POST", body: JSON.stringify({ email, role }) });
   return result.invitation as ClubInvitation;
