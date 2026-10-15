@@ -686,6 +686,18 @@ button.match-list-card { cursor: pointer; }
 .scorecard-hero h2 { margin: 8px 0 6px; font-size: 24px; }
 .scorecard-hero p { font-weight: 700; }
 .scorecard-hero small { display: block; margin-top: 12px; color: rgba(255,255,255,.65); }
+.completed-match-page { padding: 0 0 calc(156px + env(safe-area-inset-bottom)); }
+.completed-match-page > .scoring-tabs { position: sticky; top: 0; z-index: 5; flex: 0 0 auto; }
+.completed-match-summary { padding: 0 22px 24px; }
+.completed-summary-scores { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border: 1px solid var(--line); border-radius: 17px; background: white; overflow: hidden; }
+.completed-summary-scores > div { min-width: 0; padding: 17px; }
+.completed-summary-scores > div + div { border-left: 1px solid var(--line); text-align: right; }
+.completed-summary-scores span, .completed-summary-scores strong, .completed-summary-scores small { display: block; }
+.completed-summary-scores span { min-height: 26px; color: var(--muted); font: 800 9px/1.35 "Manrope"; text-transform: uppercase; overflow-wrap: anywhere; }
+.completed-summary-scores strong { margin-top: 7px; color: var(--ink); font: 800 24px/1 "Manrope"; }
+.completed-summary-scores small { margin-top: 6px; color: var(--muted); font-size: 9px; }
+.completed-match-summary .scorecard-rematch { margin-top: 16px; }
+.completed-match-empty { padding: 0 12px 24px; }
 .scorecard-meta, .scorecard-innings { margin-top: 12px; padding: 17px; border: 1px solid var(--line); border-radius: 17px; background: white; }
 .scorecard-meta div { padding: 9px 0; border-bottom: 1px solid var(--line); }
 .scorecard-meta div:last-child { border: 0; }

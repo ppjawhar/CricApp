@@ -20,7 +20,10 @@ import {
 } from "./lib/clubsApi";
 import { deleteMatch, listMatches, type CricketMatch } from "./lib/matchesApi";
 import MatchSetup from "./matches/MatchSetup";
-import ScoringPage from "./matches/ScoringPage";
+import ScoringPage, {
+  BallByBallHistory,
+  LiveMatchScorecard,
+} from "./matches/ScoringPage";
 import useConfirmSheet from "./components/ConfirmSheet";
 import PageHeader from "./components/PageHeader";
 
@@ -542,8 +545,14 @@ function Home({
       match.status,
     ),
   );
-  const activeInnings =
-    activeMatch?.score?.innings[activeMatch.score.activeInnings];
+  const homeTeamInnings = activeMatch
+    ? activeMatch.teams.map((team) =>
+        activeMatch.score?.innings.find(
+          (innings) => innings.battingTeamId === team.id,
+        ),
+      )
+    : [];
+  const hasStartedInnings = Boolean(activeMatch?.score?.innings.length);
   const completed = matches
     .filter(
       (match) => match.status === "completed" || match.status === "abandoned",
@@ -619,21 +628,33 @@ function Home({
                 <div>
                   <span>{activeMatch.teams[0].name.toUpperCase()}</span>
                   <strong>
-                    {activeInnings
-                      ? `${activeInnings.runs}/${activeInnings.wickets}`
+                    {homeTeamInnings[0]
+                      ? `${homeTeamInnings[0].runs}/${homeTeamInnings[0].wickets}`
                       : "—"}
                   </strong>
                   <small>
-                    {activeInnings
-                      ? `${Math.floor(activeInnings.legalBalls / activeMatch.rules.ballsPerOver)}.${activeInnings.legalBalls % activeMatch.rules.ballsPerOver} overs`
-                      : `${activeMatch.rules.overs} over match`}
+                    {homeTeamInnings[0]
+                      ? `${Math.floor(homeTeamInnings[0].legalBalls / activeMatch.rules.ballsPerOver)}.${homeTeamInnings[0].legalBalls % activeMatch.rules.ballsPerOver} overs`
+                      : hasStartedInnings
+                        ? "Yet to bat"
+                        : `${activeMatch.rules.overs} over match`}
                   </small>
                 </div>
                 <div className="versus">VS</div>
                 <div className="opponent">
                   <span>{activeMatch.teams[1].name.toUpperCase()}</span>
-                  <strong>—</strong>
-                  <small>{activeMatch.mode.replaceAll("-", " ")}</small>
+                  <strong>
+                    {homeTeamInnings[1]
+                      ? `${homeTeamInnings[1].runs}/${homeTeamInnings[1].wickets}`
+                      : "—"}
+                  </strong>
+                  <small>
+                    {homeTeamInnings[1]
+                      ? `${Math.floor(homeTeamInnings[1].legalBalls / activeMatch.rules.ballsPerOver)}.${homeTeamInnings[1].legalBalls % activeMatch.rules.ballsPerOver} overs`
+                      : hasStartedInnings
+                        ? "Yet to bat"
+                        : activeMatch.mode.replaceAll("-", " ")}
+                  </small>
                 </div>
               </div>
               <div className="hero-footer">
@@ -2401,6 +2422,9 @@ function MatchScorecard({
   onPlayAgain: () => void;
   onRemove: () => void;
 }) {
+  const [activeTab, setActiveTab] = useState<
+    "summary" | "scorecard" | "history"
+  >("summary");
   const score = match.score;
   const type =
     match.mode === "club-internal"
@@ -2408,208 +2432,153 @@ function MatchScorecard({
       : match.mode === "club-external"
         ? "External club match"
         : "Quick match";
+  const inningsByTeam = match.teams.map((team) =>
+    score?.innings.find((innings) => innings.battingTeamId === team.id),
+  );
+
   return (
     <>
       <PageHeader
-        title="Scorecard"
+        title="Match details"
         eyebrow={matchStatusLabel(match.status).toUpperCase()}
         onBack={onBack}
         backLabel="Back to all matches"
       />
-      <div className="page scorecard-page">
-        <section className="scorecard-hero">
-          <span className="eyebrow light">
-            {matchStatusLabel(match.status).toUpperCase()}
-          </span>
-          <h2>
-            {score?.result ||
-              (match.status === "abandoned"
-                ? "Match abandoned"
-                : "Match scorecard")}
-          </h2>
-          <p>
-            {match.teams[0].name} vs {match.teams[1].name}
-          </p>
-          <small>
-            {type} ·{" "}
-            {match.mode === "quick"
-              ? "Separate quick statistics"
-              : "Counts toward club records"}
-          </small>
-        </section>
-        <section className="scorecard-meta">
-          <div>
-            <span>Toss</span>
-            <strong>
-              {
-                match.teams.find((team) => team.id === match.toss.winnerId)
-                  ?.name
-              }{" "}
-              chose to {match.toss.decision}
-            </strong>
-          </div>
-          <div>
-            <span>Rules</span>
-            <strong>
-              {match.rules.overs} overs · {match.rules.ballsPerOver} balls ·
-              Free hit {match.rules.freeHit ? "on" : "off"}
-            </strong>
-          </div>
-          {match.rules.venue && (
-            <div>
-              <span>Venue</span>
-              <strong>{match.rules.venue}</strong>
-            </div>
-          )}
-        </section>
-        {score?.innings.map((innings, inningsIndex) => {
-          const team = match.teams.find(
-            (entry) => entry.id === innings.battingTeamId,
-          )!;
-          const batting = new Map<
-            string,
-            {
-              runs: number;
-              balls: number;
-              fours: number;
-              sixes: number;
-            }
-          >();
-          const bowling = new Map<
-            string,
-            {
-              runs: number;
-              balls: number;
-              wickets: number;
-            }
-          >();
-          innings.deliveries.forEach((delivery) => {
-            const bat = batting.get(delivery.strikerId) || {
-              runs: 0,
-              balls: 0,
-              fours: 0,
-              sixes: 0,
-            };
-            bat.runs += delivery.batRuns;
-            if (delivery.legal) bat.balls += 1;
-            if (delivery.boundary === 4) bat.fours += 1;
-            if (delivery.boundary === 6) bat.sixes += 1;
-            batting.set(delivery.strikerId, bat);
-            const bowl = bowling.get(delivery.bowlerId) || {
-              runs: 0,
-              balls: 0,
-              wickets: 0,
-            };
-            bowl.balls += delivery.legal ? 1 : 0;
-            bowl.runs +=
-              delivery.batRuns +
-              (delivery.extraType === "bye" || delivery.extraType === "leg-bye"
-                ? 0
-                : delivery.extraType === "no-ball" && delivery.runningExtraType
-                  ? match.rules.noBallPenalty
-                  : delivery.extraRuns);
-            if (delivery.wicket && delivery.wicket.type !== "run-out")
-              bowl.wickets += 1;
-            bowling.set(delivery.bowlerId, bowl);
-          });
-          const fielding = match.teams.find(
-            (entry) => entry.id !== innings.battingTeamId,
-          )!;
-          const extras = innings.deliveries.reduce(
-            (sum, delivery) => sum + delivery.extraRuns,
-            0,
-          );
-          return (
-            <section
-              className="scorecard-innings"
-              key={`${innings.battingTeamId}-${inningsIndex}`}
+      <div className="page scorecard-page completed-match-page">
+        <nav className="scoring-tabs" aria-label="Completed match views">
+          {(
+            [
+              ["summary", "Summary"],
+              ["scorecard", "Scorecard"],
+              ["history", "History"],
+            ] as const
+          ).map(([tab, label]) => (
+            <button
+              type="button"
+              key={tab}
+              className={activeTab === tab ? "active" : ""}
+              aria-current={activeTab === tab ? "page" : undefined}
+              onClick={() => setActiveTab(tab)}
             >
-              <header>
-                <div>
-                  <span>{inningsIndex + 1} innings</span>
-                  <strong>{team.name}</strong>
-                </div>
-                <b>
-                  {innings.runs}/{innings.wickets}
-                  <small>
-                    {Math.floor(innings.legalBalls / match.rules.ballsPerOver)}.
-                    {innings.legalBalls % match.rules.ballsPerOver} ov
-                  </small>
-                </b>
-              </header>
-              <h3>Batting</h3>
-              {team.players
-                .filter((player) => batting.has(player.id))
-                .map((player) => {
-                  const item = batting.get(player.id)!;
-                  return (
-                    <div className="scorecard-row" key={player.id}>
-                      <span>{player.name}</span>
-                      <strong>{item.runs}</strong>
-                      <small>
-                        {item.balls} balls · {item.fours}×4 · {item.sixes}×6
-                      </small>
-                    </div>
-                  );
-                })}
-              <div className="scorecard-row extras">
-                <span>Extras</span>
-                <strong>{extras}</strong>
-              </div>
-              <h3>Bowling</h3>
-              {fielding.players
-                .filter((player) => bowling.has(player.id))
-                .map((player) => {
-                  const item = bowling.get(player.id)!;
-                  return (
-                    <div className="scorecard-row" key={player.id}>
-                      <span>{player.name}</span>
-                      <strong>
-                        {item.wickets}/{item.runs}
-                      </strong>
-                      <small>
-                        {Math.floor(item.balls / match.rules.ballsPerOver)}.
-                        {item.balls % match.rules.ballsPerOver} overs
-                      </small>
-                    </div>
-                  );
-                })}
-              <h3>Deliveries</h3>
-              <div className="scorecard-timeline">
-                {innings.deliveries.map((delivery, deliveryIndex) => (
-                  <span
-                    key={delivery.id}
-                    className={delivery.wicket ? "wicket" : ""}
-                  >
-                    <b>
-                      {Math.floor(deliveryIndex / match.rules.ballsPerOver)}.
-                      {(deliveryIndex % match.rules.ballsPerOver) + 1}
-                    </b>
-                    {delivery.label}
-                  </span>
-                ))}
-              </div>
+              {label}
+            </button>
+          ))}
+        </nav>
+
+        {activeTab === "summary" && (
+          <div className="completed-match-summary">
+            <section className="scorecard-hero">
+              <span className="eyebrow light">
+                {matchStatusLabel(match.status).toUpperCase()}
+              </span>
+              <h2>
+                {score?.result ||
+                  (match.status === "abandoned"
+                    ? "Match abandoned"
+                    : "Match completed")}
+              </h2>
+              <p>
+                {match.teams[0].name} vs {match.teams[1].name}
+              </p>
+              <small>
+                {type} ·{" "}
+                {match.mode === "quick"
+                  ? "Separate quick statistics"
+                  : "Counts toward club records"}
+              </small>
             </section>
-          );
-        }) || (
-          <div className="full-empty">
-            <h3>No deliveries recorded</h3>
-            <p>This match has no saved scoring events.</p>
+
+            <section
+              className="completed-summary-scores"
+              aria-label="Final match scores"
+            >
+              {match.teams.map((team, index) => {
+                const innings = inningsByTeam[index];
+                const overs = innings
+                  ? `${Math.floor(
+                      innings.legalBalls / match.rules.ballsPerOver,
+                    )}.${innings.legalBalls % match.rules.ballsPerOver}`
+                  : "";
+                return (
+                  <div key={team.id}>
+                    <span>{team.name}</span>
+                    <strong>
+                      {innings ? `${innings.runs}/${innings.wickets}` : "—"}
+                    </strong>
+                    <small>
+                      {innings ? `${overs} overs` : "No score recorded"}
+                    </small>
+                  </div>
+                );
+              })}
+            </section>
+
+            <section className="scorecard-meta">
+              <div>
+                <span>Toss</span>
+                <strong>
+                  {
+                    match.teams.find(
+                      (team) => team.id === match.toss.winnerId,
+                    )?.name
+                  }{" "}
+                  chose to {match.toss.decision}
+                </strong>
+              </div>
+              <div>
+                <span>Rules</span>
+                <strong>
+                  {match.rules.overs} overs · {match.rules.ballsPerOver} balls ·
+                  Free hit {match.rules.freeHit ? "on" : "off"}
+                </strong>
+              </div>
+              {match.rules.venue && (
+                <div>
+                  <span>Venue</span>
+                  <strong>{match.rules.venue}</strong>
+                </div>
+              )}
+            </section>
+
+            <Button
+              className="score-primary-action scorecard-rematch"
+              onClick={onPlayAgain}
+            >
+              Play again with these teams
+            </Button>
+            <button
+              type="button"
+              className="remove-match-button"
+              onClick={onRemove}
+            >
+              Remove match
+            </button>
           </div>
         )}
-        <Button
-          className="score-primary-action scorecard-rematch"
-          onClick={onPlayAgain}
-        >
-          Play again with these teams
-        </Button>
-        <button
-          type="button"
-          className="remove-match-button"
-          onClick={onRemove}
-        >
-          Remove match
-        </button>
+
+        {activeTab === "scorecard" &&
+          (score ? (
+            <LiveMatchScorecard match={match} state={score} />
+          ) : (
+            <div className="completed-match-empty">
+              <div className="score-tab-empty">
+                <strong>No scorecard recorded</strong>
+                <p>This match has no saved innings information.</p>
+              </div>
+            </div>
+          ))}
+
+        {activeTab === "history" &&
+          (score ? (
+            <BallByBallHistory match={match} state={score} />
+          ) : (
+            <div className="completed-match-empty">
+              <div className="score-tab-empty">
+                <strong>No delivery history</strong>
+                <p>This match has no saved ball-by-ball information.</p>
+              </div>
+            </div>
+          ))}
       </div>
     </>
   );

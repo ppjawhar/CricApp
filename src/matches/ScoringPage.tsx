@@ -2356,7 +2356,7 @@ export default function ScoringPage({
   );
 }
 
-function LiveMatchScorecard({
+export function LiveMatchScorecard({
   match,
   state,
 }: {
@@ -2679,7 +2679,7 @@ function LiveMatchScorecard({
   );
 }
 
-function BallByBallHistory({
+export function BallByBallHistory({
   match,
   state,
   onRemove,
