@@ -278,6 +278,7 @@ function AuthenticatedApp() {
     CricketMatch | undefined
   >();
   const [currentMatch, setCurrentMatch] = useState<CricketMatch | null>(null);
+  const [matchToOpen, setMatchToOpen] = useState<CricketMatch | null>(null);
 
   useEffect(() => {
     let releaseTimer: number | undefined;
@@ -427,10 +428,19 @@ function AuthenticatedApp() {
         />
       )}
       {tab === "Clubs" && (
-        <Clubs onStart={startClubMatch} initialClub={clubToOpen} />
+        <Clubs
+          onStart={startClubMatch}
+          initialClub={clubToOpen}
+          onOpenMatch={(match) => {
+            setMatchToOpen(match);
+            setTab("Matches");
+          }}
+        />
       )}
       {tab === "Matches" && (
         <Matches
+          initialMatch={matchToOpen}
+          onInitialMatchOpened={() => setMatchToOpen(null)}
           onResume={(match) => {
             setCurrentMatch(match);
             setScoring(true);
@@ -860,12 +870,79 @@ function Home({
   );
 }
 
+function ClubMatchCard({
+  match,
+  onOpen,
+}: {
+  match: CricketMatch;
+  onOpen: () => void;
+}) {
+  const inningsByTeam = match.teams.map((team) =>
+    match.score?.innings.find((innings) => innings.battingTeamId === team.id),
+  );
+  const matchDate = new Date(
+    match.completedAt || match.updatedAt || match.createdAt,
+  );
+  const matchType =
+    match.mode === "club-internal" ? "Internal match" : "External match";
+
+  return (
+    <button
+      type="button"
+      className="club-match-card"
+      onClick={onOpen}
+      aria-label={`View ${match.teams[0].name} versus ${match.teams[1].name}`}
+    >
+      <span className="club-match-card-top">
+        <b className={match.status === "abandoned" ? "abandoned" : ""}>
+          {match.status === "abandoned" ? "Abandoned" : "Completed"}
+        </b>
+        <time dateTime={matchDate.toISOString()}>
+          {matchDate.toLocaleDateString(undefined, {
+            day: "numeric",
+            month: "short",
+            year: "numeric",
+          })}
+        </time>
+      </span>
+      <strong className="club-match-result">
+        {match.score?.result || "Match abandoned"}
+      </strong>
+      <span className="club-match-teams">
+        {match.teams.map((team, index) => {
+          const innings = inningsByTeam[index];
+          const overs = innings
+            ? `${Math.floor(innings.legalBalls / match.rules.ballsPerOver)}.${innings.legalBalls % match.rules.ballsPerOver}`
+            : "";
+          return (
+            <span key={team.id}>
+              <span>
+                <strong>{team.name}</strong>
+                <small>{innings ? `${overs} overs` : "No score"}</small>
+              </span>
+              <b>{innings ? `${innings.runs}/${innings.wickets}` : "—"}</b>
+            </span>
+          );
+        })}
+      </span>
+      <span className="club-match-card-footer">
+        <small>{matchType}</small>
+        <span>
+          View details <Icon name="chevron" size={15} />
+        </span>
+      </span>
+    </button>
+  );
+}
+
 function Clubs({
   onStart,
   initialClub,
+  onOpenMatch,
 }: {
   onStart: (club: Club) => void;
   initialClub?: Club | null;
+  onOpenMatch: (match: CricketMatch) => void;
 }) {
   const { confirm, confirmationSheet } = useConfirmSheet();
   const [view, setView] = useState<"list" | "create" | "detail">(
@@ -1390,17 +1467,11 @@ function Clubs({
                 {selectedClub.recentMatches?.length ? (
                   <div className="club-history-list">
                     {selectedClub.recentMatches.slice(0, 3).map((match) => (
-                      <div key={match.id}>
-                        <strong>
-                          {match.teams[0].name} vs {match.teams[1].name}
-                        </strong>
-                        <span>{match.score?.result || "Match abandoned"}</span>
-                        <small>
-                          {match.mode === "club-internal"
-                            ? "Internal"
-                            : "External"}
-                        </small>
-                      </div>
+                      <ClubMatchCard
+                        key={match.id}
+                        match={match}
+                        onOpen={() => onOpenMatch(match)}
+                      />
                     ))}
                   </div>
                 ) : (
@@ -1619,19 +1690,11 @@ function Clubs({
                   </div>
                   <div className="club-history-list">
                     {selectedClub.recentMatches.map((match) => (
-                      <div key={match.id}>
-                        <strong>
-                          {match.teams[0].name} vs {match.teams[1].name}
-                        </strong>
-                        <span>{match.score?.result || "Match abandoned"}</span>
-                        <small>
-                          {new Date(
-                            match.completedAt ||
-                              match.updatedAt ||
-                              match.createdAt,
-                          ).toLocaleDateString()}
-                        </small>
-                      </div>
+                      <ClubMatchCard
+                        key={match.id}
+                        match={match}
+                        onOpen={() => onOpenMatch(match)}
+                      />
                     ))}
                   </div>
                 </>
@@ -1668,7 +1731,7 @@ function Clubs({
                     {selectedClub.playerStats
                       .filter((stats) => stats.appearances > 0)
                       .sort((a, b) => b.runs - a.runs)
-                      .map((stats) => {
+                      .map((stats, index) => {
                         const player = selectedClub.players.find(
                           (item) => item.id === stats.playerId,
                         );
@@ -1681,17 +1744,79 @@ function Clubs({
                             ).toFixed(2)
                           : "—";
                         return (
-                          <div key={stats.playerId}>
-                            <strong>{player?.name || "Archived player"}</strong>
-                            <span>
-                              {stats.runs} runs · HS {stats.highest} · SR{" "}
-                              {strikeRate}
-                            </span>
-                            <small>
-                              {stats.wickets} wickets · Econ {economy} ·{" "}
-                              {stats.appearances} matches
-                            </small>
-                          </div>
+                          <article
+                            className="player-stat-card"
+                            key={stats.playerId}
+                          >
+                            <header className="player-stat-header">
+                              <span className="player-stat-rank">
+                                #{index + 1}
+                              </span>
+                              <Avatar
+                                initials={getInitials(
+                                  player?.name || "Archived player",
+                                )}
+                                tone={index === 0 ? "green" : "cream"}
+                              />
+                              <span className="player-stat-identity">
+                                <strong>
+                                  {player?.name || "Archived player"}
+                                </strong>
+                                <small>
+                                  {player?.role
+                                    ? player.role.replace("-", " ")
+                                    : "Club player"}
+                                </small>
+                              </span>
+                              <span className="player-stat-appearances">
+                                <strong>{stats.appearances}</strong>
+                                <small>Matches</small>
+                              </span>
+                            </header>
+                            <div className="player-stat-panels">
+                              <section className="batting-stat-panel">
+                                <span>Batting</span>
+                                <strong>{stats.runs}</strong>
+                                <small>Total runs</small>
+                                <div>
+                                  <span>
+                                    <small>Highest</small>
+                                    <b>{stats.highest}</b>
+                                  </span>
+                                  <span>
+                                    <small>Strike rate</small>
+                                    <b>{strikeRate}</b>
+                                  </span>
+                                </div>
+                              </section>
+                              <section className="bowling-stat-panel">
+                                <span>Bowling</span>
+                                <strong>{stats.wickets}</strong>
+                                <small>Total wickets</small>
+                                <div>
+                                  <span>
+                                    <small>Runs</small>
+                                    <b>{stats.runsConceded}</b>
+                                  </span>
+                                  <span>
+                                    <small>Economy</small>
+                                    <b>{economy}</b>
+                                  </span>
+                                </div>
+                              </section>
+                            </div>
+                            <footer className="player-stat-footer">
+                              <span>
+                                Innings <b>{stats.innings}</b>
+                              </span>
+                              <span>
+                                Fours <b>{stats.fours}</b>
+                              </span>
+                              <span>
+                                Sixes <b>{stats.sixes}</b>
+                              </span>
+                            </footer>
+                          </article>
                         );
                       })}
                   </div>
@@ -2119,11 +2244,15 @@ function Clubs({
 }
 
 function Matches({
+  initialMatch,
+  onInitialMatchOpened,
   onResume,
   onPlayAgain,
   onCreateQuick,
   onCreateClub,
 }: {
+  initialMatch?: CricketMatch | null;
+  onInitialMatchOpened: () => void;
   onResume: (match: CricketMatch) => void;
   onPlayAgain: (match: CricketMatch) => void;
   onCreateQuick: () => void;
@@ -2135,7 +2264,9 @@ function Matches({
   const [filter, setFilter] = useState<
     "all" | "active" | "completed" | "abandoned"
   >("all");
-  const [selectedMatch, setSelectedMatch] = useState<CricketMatch | null>(null);
+  const [selectedMatch, setSelectedMatch] = useState<CricketMatch | null>(
+    initialMatch ?? null,
+  );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [creating, setCreating] = useState(false);
@@ -2163,6 +2294,12 @@ function Matches({
       active = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!initialMatch) return;
+    setSelectedMatch(initialMatch);
+    onInitialMatchOpened();
+  }, [initialMatch?.id]);
 
   const filteredMatches = matches.filter((match) => {
     if (filter === "active")

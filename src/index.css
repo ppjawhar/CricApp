@@ -794,11 +794,52 @@ button.match-list-card { cursor: pointer; }
 .club-record-summary strong, .club-record-summary span { display: block; }
 .club-record-summary span { margin-top: 5px; font-size: 7px; letter-spacing: .7px; opacity: .65; }
 .club-history-list, .player-stats-list { display: grid; gap: 8px; margin-top: 12px; }
-.club-history-list > div, .player-stats-list > div { padding: 13px; border: 1px solid var(--line); border-radius: 13px; background: white; }
-.club-history-list strong, .club-history-list span, .club-history-list small, .player-stats-list strong, .player-stats-list span, .player-stats-list small { display: block; }
-.club-history-list strong, .player-stats-list strong { font-size: 11px; }
-.club-history-list span, .player-stats-list span { margin-top: 4px; color: #55615a; font-size: 10px; }
-.club-history-list small, .player-stats-list small { margin-top: 4px; color: var(--muted); font-size: 8px; text-transform: capitalize; }
+.club-match-card { width: 100%; padding: 13px; border: 1px solid var(--line); border-radius: 15px; background: white; color: var(--ink); text-align: left; cursor: pointer; transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease; }
+.club-match-card:hover { border-color: #c3d1b5; box-shadow: 0 7px 18px rgba(24,49,40,.08); transform: translateY(-1px); }
+.club-match-card:active { transform: scale(.99); }
+.club-match-card:focus-visible { outline: 2px solid #7da94a; outline-offset: 2px; }
+.club-match-card-top, .club-match-card-footer, .club-match-teams > span { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.club-match-card-top > b { padding: 5px 7px; border-radius: 99px; background: #e8f3da; color: #527a27; font: 800 7px/1 "Manrope"; letter-spacing: .6px; text-transform: uppercase; }
+.club-match-card-top > b.abandoned { background: #f2e7e2; color: #9a4a32; }
+.club-match-card-top time { color: var(--muted); font-size: 8px; }
+.club-match-result { display: block; margin-top: 10px; font: 800 12px/1.3 "Manrope"; }
+.club-match-teams { display: grid; gap: 0; margin-top: 9px; border-block: 1px solid #eceee8; }
+.club-match-teams > span { min-height: 47px; }
+.club-match-teams > span + span { border-top: 1px solid #f0f1ec; }
+.club-match-teams > span > span { min-width: 0; flex: 1; }
+.club-match-teams strong, .club-match-teams small { display: block; }
+.club-match-teams strong { font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.club-match-teams small { margin-top: 3px; color: var(--muted); font-size: 8px; }
+.club-match-teams > span > b { flex: 0 0 auto; font: 800 17px/1 "Manrope"; }
+.club-match-card-footer { margin-top: 10px; }
+.club-match-card-footer > small { color: var(--muted); font-size: 8px; }
+.club-match-card-footer > span { display: flex; align-items: center; gap: 3px; color: #5e8136; font-size: 8px; font-weight: 800; }
+.player-stat-card { padding: 11px; border: 1px solid var(--line); border-radius: 15px; background: white; box-shadow: 0 4px 13px rgba(25,45,37,.04); }
+.player-stat-header { display: flex; align-items: center; gap: 8px; }
+.player-stat-header .avatar { width: 36px; height: 36px; flex: 0 0 auto; border-radius: 11px; font-size: 9px; }
+.player-stat-rank { min-width: 24px; color: #789357; font: 800 8px/1 "Manrope"; }
+.player-stat-identity { min-width: 0; flex: 1; }
+.player-stat-identity strong, .player-stat-identity small, .player-stat-appearances strong, .player-stat-appearances small { display: block; }
+.player-stat-identity strong { font: 800 12px/1.2 "Manrope"; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.player-stat-identity small { margin-top: 4px; color: var(--muted); font-size: 8px; text-transform: capitalize; }
+.player-stat-appearances { min-width: 46px; padding: 6px 7px; border-radius: 9px; background: #f2f5ed; text-align: center; }
+.player-stat-appearances strong { font: 800 14px/1 "Manrope"; }
+.player-stat-appearances small { margin-top: 4px; color: var(--muted); font: 700 6px/1 "Manrope"; letter-spacing: .5px; text-transform: uppercase; }
+.player-stat-panels { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; margin-top: 9px; }
+.player-stat-panels > section { min-width: 0; padding: 10px; border-radius: 11px; }
+.batting-stat-panel { background: #eaf4dd; color: #34531d; }
+.bowling-stat-panel { background: #f1eee5; color: #554b34; }
+.player-stat-panels > section > span { display: block; font: 800 7px/1 "Manrope"; letter-spacing: .7px; text-transform: uppercase; opacity: .72; }
+.player-stat-panels > section > strong { display: block; margin-top: 6px; font: 800 22px/1 "Manrope"; }
+.player-stat-panels > section > small { display: block; margin-top: 3px; font-size: 7px; opacity: .7; }
+.player-stat-panels > section > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; margin-top: 8px; padding-top: 7px; border-top: 1px solid currentColor; border-color: rgba(45,65,35,.13); }
+.player-stat-panels > section > div > span { min-width: 0; }
+.player-stat-panels > section > div small, .player-stat-panels > section > div b { display: block; }
+.player-stat-panels > section > div small { font-size: 6px; text-transform: uppercase; letter-spacing: .35px; opacity: .65; }
+.player-stat-panels > section > div b { margin-top: 4px; font: 800 10px/1 "Manrope"; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.player-stat-footer { min-height: 29px; display: grid; grid-template-columns: repeat(3, 1fr); align-items: end; gap: 5px; color: var(--muted); font-size: 7px; text-align: center; }
+.player-stat-footer span + span { border-left: 1px solid var(--line); }
+.player-stat-footer b { margin-left: 3px; color: var(--ink); font: 800 9px/1 "Manrope"; }
 .stats-policy { margin-bottom: 12px; color: var(--muted); font-size: 10px; line-height: 1.5; }
 .rules-explanation { margin: 9px 0 14px; color: var(--muted); font-size: 9px; line-height: 1.45; }
 .profile-invitations { margin: 20px 0; }
