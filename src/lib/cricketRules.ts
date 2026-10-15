@@ -11,25 +11,50 @@ export function isLegalDelivery(extraType?: ExtraType) {
   return extraType !== "wide" && extraType !== "no-ball";
 }
 
-export function completedRunsForDelivery(delivery: DeliveryInput, widePenalty: number, noBallPenalty: number) {
-  if (delivery.extraType === "wide") return Math.max(0, delivery.extraRuns - widePenalty);
-  if (delivery.extraType === "no-ball") return delivery.runningExtraType ? Math.max(0, delivery.extraRuns - noBallPenalty) : delivery.batRuns;
+export function wideDeliveryLabel(extraRuns: number, widePenalty: number) {
+  const additionalRuns = Math.max(0, extraRuns - widePenalty);
+  return additionalRuns ? `Wd+${additionalRuns}` : "Wd";
+}
+
+export function completedRunsForDelivery(
+  delivery: DeliveryInput,
+  widePenalty: number,
+  noBallPenalty: number,
+) {
+  if (delivery.extraType === "wide")
+    return Math.max(0, delivery.extraRuns - widePenalty);
+  if (delivery.extraType === "no-ball")
+    return delivery.runningExtraType
+      ? Math.max(0, delivery.extraRuns - noBallPenalty)
+      : delivery.batRuns;
   return delivery.batRuns || delivery.extraRuns;
 }
 
-export function bowlerConcededRuns(delivery: DeliveryInput, noBallPenalty: number) {
-  if (delivery.extraType === "bye" || delivery.extraType === "leg-bye") return delivery.batRuns;
-  if (delivery.extraType === "no-ball" && delivery.runningExtraType) return delivery.batRuns + noBallPenalty;
+export function bowlerConcededRuns(
+  delivery: DeliveryInput,
+  noBallPenalty: number,
+) {
+  if (delivery.extraType === "bye" || delivery.extraType === "leg-bye")
+    return delivery.batRuns;
+  if (delivery.extraType === "no-ball" && delivery.runningExtraType)
+    return delivery.batRuns + noBallPenalty;
   return delivery.batRuns + delivery.extraRuns;
 }
 
-export function nextFreeHit(current: boolean, extraType: ExtraType | undefined, enabled: boolean) {
+export function nextFreeHit(
+  current: boolean,
+  extraType: ExtraType | undefined,
+  enabled: boolean,
+) {
   if (extraType === "no-ball" && enabled) return true;
   if (isLegalDelivery(extraType)) return false;
   return current;
 }
 
-export function allowedDismissals(freeHit: boolean, extraType?: ExtraType): DismissalType[] {
+export function allowedDismissals(
+  freeHit: boolean,
+  extraType?: ExtraType,
+): DismissalType[] {
   if (freeHit || extraType === "no-ball") return ["run-out"];
   return ["bowled", "caught", "lbw", "run-out", "stumped", "hit-wicket"];
 }
@@ -58,4 +83,19 @@ export function canChangeBowlerBeforeDelivery(
   if (!deliveries.length) return true;
   const lastDelivery = deliveries[deliveries.length - 1];
   return lastDelivery.legal && legalBalls % ballsPerOver === 0;
+}
+
+export function currentOverDeliveries<T extends { legal: boolean }>(
+  deliveries: T[],
+  ballsPerOver: number,
+) {
+  let legalBalls = 0;
+  let currentOver: T[] = [];
+  for (const delivery of deliveries) {
+    currentOver.push(delivery);
+    if (!delivery.legal) continue;
+    legalBalls += 1;
+    if (legalBalls % ballsPerOver === 0) currentOver = [];
+  }
+  return currentOver;
 }

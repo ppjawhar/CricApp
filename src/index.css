@@ -324,6 +324,14 @@ h1, h2 { font-family: "Manrope"; letter-spacing: -.8px; }
 .sheet-title { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 19px; }
 .sheet-title h2 { font-size: 22px; margin-top: 5px; }
 .sheet-close { width: 38px; height: 38px; border: 0; border-radius: 50%; background: var(--cream); color: var(--ink); font-size: 21px; cursor: pointer; }
+.confirmation-sheet { width: 100%; max-width: 560px; padding: 10px 22px calc(24px + env(safe-area-inset-bottom)); border-radius: 24px 24px 0 0; background: var(--paper); box-shadow: 0 -20px 50px rgba(10,30,23,.22); animation: sheet-up .25s ease-out; }
+.confirmation-sheet h2 { margin-top: 7px; font-size: 21px; }
+.confirmation-sheet > p { margin-top: 9px; color: var(--muted); font-size: 10px; line-height: 1.55; }
+.confirmation-actions { margin-top: 21px; display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+.confirmation-actions button { min-height: 48px; border-radius: 13px; font-size: 11px; font-weight: 700; cursor: pointer; }
+.confirmation-cancel { border: 1px solid var(--line); background: white; color: var(--ink); }
+.confirmation-submit { border: 0; background: var(--navy); color: white; }
+.confirmation-submit.danger { background: #a7462a; }
 .club-settings-sheet { max-height: min(92dvh, calc(100dvh - env(safe-area-inset-top))); padding-bottom: calc(35px + env(safe-area-inset-bottom)); }
 .danger-zone { margin-top: 28px; padding: 20px 16px 16px; border: 1px solid #eccabd; border-radius: 16px; background: #fff9f6; }
 .danger-zone .eyebrow { color: #a44b2e; }
@@ -614,6 +622,7 @@ button.match-list-card { cursor: pointer; }
 .live-score-main > div:last-child span { color: rgba(255,255,255,.48); font: 800 8px/1 "Manrope"; letter-spacing: 1px; margin-top: 5px; }
 .score-context { display: flex; gap: 20px; color: rgba(255,255,255,.55); font-size: 9px; }
 .score-context strong { color: white; margin-left: 3px; }
+.score-context.chase-context { flex-wrap: wrap; column-gap: 16px; row-gap: 6px; }
 .scoring-tabs { min-height: 48px; padding: 0 14px; display: grid; grid-template-columns: repeat(3, 1fr); background: white; border-bottom: 1px solid var(--line); }
 .scoring-tabs button { position: relative; border: 0; background: transparent; color: var(--muted); font-size: 10px; font-weight: 700; cursor: pointer; }
 .scoring-tabs button::after { content: ""; position: absolute; right: 12px; bottom: 0; left: 12px; height: 2px; border-radius: 2px 2px 0 0; background: transparent; }
@@ -624,6 +633,7 @@ button.match-list-card { cursor: pointer; }
 .live-player-panel p, .live-player-panel b { margin: 0; }
 .live-player-panel p strong, .live-player-panel p small, .live-player-panel > div > b small { display: block; }
 .live-player-panel p strong { font-size: 12px; }
+.change-batter-button { margin-left: 7px; padding: 4px 7px; border: 1px solid #c8d5b9; border-radius: 99px; background: #f2f7eb; color: #587b31; font: 700 7px/1 "DM Sans"; vertical-align: middle; cursor: pointer; }
 .live-player-panel p small { color: var(--muted); font-size: 7px; letter-spacing: .7px; margin-top: 3px; }
 .live-player-panel > div > b { text-align: right; font: 800 16px/1 "Manrope"; }
 .live-player-panel > div > b small { color: var(--muted); font: 500 8px/1 "DM Sans"; margin-top: 5px; }
@@ -634,10 +644,12 @@ button.match-list-card { cursor: pointer; }
 .change-bowler-button { margin-left: 7px; padding: 4px 7px; border: 1px solid #b8c8a8; border-radius: 99px; background: #eef6e5; color: #527729; font: 700 7px/1 "DM Sans"; cursor: pointer; }
 .live-over-strip { min-height: 52px; padding: 9px 21px; display: flex; align-items: center; gap: 12px; background: white; border-bottom: 1px solid var(--line); overflow: hidden; }
 .live-over-strip > span { color: var(--muted); font: 800 8px/1 "Manrope"; letter-spacing: .8px; white-space: nowrap; }
-.live-over-strip > div { min-width: 0; display: flex; align-items: center; gap: 6px; overflow-x: auto; }
-.live-over-strip i { width: 27px; height: 27px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 50%; background: #e9ede6; color: var(--ink); font: 700 8px/1 "Manrope"; font-style: normal; }
+.live-over-strip > div { min-width: 0; flex: 1; display: flex; align-items: center; gap: 6px; overflow-x: auto; }
+.live-over-strip i { width: 27px; height: 27px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 50%; background: #e4f0d5; color: #456b22; font: 700 8px/1 "Manrope"; font-style: normal; }
 .live-over-strip i.wicket { background: #f3ddd6; color: #a84427; }
+.live-over-strip i.pending-ball { border: 1px dashed #cbd0c5; background: #f7f6f0; color: #b4bbb4; }
 .live-over-strip small { color: #9aa19c; font-size: 9px; }
+.live-over-strip .balls-left { flex: 0 0 auto; white-space: nowrap; }
 .live-controls { padding: 19px 18px 10px; }
 .live-control-head { display: flex; align-items: end; justify-content: space-between; margin-bottom: 13px; }
 .live-control-head > div span, .live-control-head > div strong { display: block; }
@@ -696,8 +708,14 @@ button.match-list-card { cursor: pointer; }
 .scorecard-timeline b { display: block; color: var(--muted); font-size: 7px; }
 .live-scorecard-view, .ball-history-view { padding: 4px 12px 24px; }
 .live-scorecard-heading { padding: 12px 2px 9px; }
-.live-scorecard-heading span { color: var(--muted); font: 800 8px/1 "Manrope"; letter-spacing: 1px; }
-.live-scorecard-heading h2 { margin-top: 5px; font-size: 16px; }
+.live-scorecard-heading > span { color: var(--muted); font: 800 8px/1 "Manrope"; letter-spacing: 1px; }
+.scorecard-matchup { margin-top: 9px; display: grid; grid-template-columns: minmax(0, 1fr) 34px minmax(0, 1fr); align-items: center; gap: 7px; }
+.scorecard-matchup-team { min-width: 0; min-height: 44px; padding: 0 2px; display: flex; align-items: center; gap: 8px; }
+.scorecard-matchup-team b { width: 34px; height: 34px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 10px; background: var(--navy); color: white; font: 800 9px/1 "Manrope"; }
+.scorecard-matchup-team strong { min-width: 0; font: 800 10px/1.25 "Manrope"; overflow-wrap: anywhere; }
+.scorecard-matchup-team.away { flex-direction: row-reverse; text-align: right; }
+.scorecard-matchup-team.away b { background: var(--navy); color: white; }
+.scorecard-matchup > i { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 50%; background: #edf4e4; color: #5b7e35; font: 800 8px/1 "Manrope"; font-style: normal; letter-spacing: .4px; }
 .scorecard-team-tabs { padding: 4px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; border: 1px solid #dfe4d8; border-radius: 13px; background: #edf1e7; }
 .scorecard-innings-tabs { display: flex; }
 .scorecard-innings-tabs button { flex: 1; min-width: 0; }
@@ -707,6 +725,7 @@ button.match-list-card { cursor: pointer; }
 .detailed-scorecard > header { min-height: 40px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--line); }
 .detailed-scorecard > header > span > strong { display: block; margin-top: 3px; font: 800 13px/1.2 "Manrope"; }
 .detailed-scorecard > header > span > small { color: var(--muted); font: 800 7px/1 "Manrope"; letter-spacing: .8px; }
+.detailed-scorecard > header > span > .manual-total-note { display: block; margin-top: 4px; color: #6c873f; font-size: 7px; letter-spacing: 0; text-transform: none; }
 .detailed-scorecard > header > b { white-space: nowrap; font: 800 17px/1 "Manrope"; }
 .detailed-scorecard > header > b.innings-not-started { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .6px; }
 .detailed-scorecard > header small { color: var(--muted); font-size: 10px; }
@@ -821,6 +840,12 @@ button.match-list-card { cursor: pointer; }
 .score-sheet > label { display: block; margin-top: 13px; }
 .score-sheet > label > span { display: block; font-size: 9px; font-weight: 700; margin-bottom: 7px; }
 .score-sheet select { width: 100%; height: 49px; padding: 0 12px; border: 1px solid var(--line); border-radius: 12px; background: white; color: var(--ink); font: 500 11px/1 "DM Sans"; text-transform: capitalize; }
+.innings-summary-fields { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.innings-summary-fields label > span { display: block; margin-bottom: 7px; font-size: 9px; font-weight: 700; }
+.innings-summary-fields input { width: 100%; height: 49px; min-width: 0; padding: 0 11px; border: 1px solid var(--line); border-radius: 12px; background: white; color: var(--ink); font: 700 14px/1 "Manrope"; }
+.innings-summary-fields input:focus { outline: 0; border-color: #83a64b; box-shadow: 0 0 0 3px rgba(131,166,75,.13); }
+.innings-summary-help { display: block; margin: 9px 0 16px; color: var(--muted); font-size: 8px; line-height: 1.45; }
+.score-sheet-error { margin: 0 0 12px; padding: 10px 12px; border-radius: 10px; background: #fae9e3; color: #9b3e24; font-size: 9px; line-height: 1.4; }
 .selection-sheet-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .selection-sheet-heading > h2 { margin-right: auto; }
 .selection-sheet-heading > button { width: 34px; height: 34px; border: 0; border-radius: 50%; background: var(--cream); color: var(--ink); font-size: 20px; cursor: pointer; }
@@ -929,6 +954,8 @@ button.match-list-card { cursor: pointer; }
 .final-innings-list > div > strong { font-size: 11px; }
 .final-innings-list > div > b { font: 800 17px/1 "Manrope"; }
 .final-innings-list > div > small { grid-column: 3; color: var(--muted); font-size: 8px; text-align: right; margin-top: -13px; }
+.final-score-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: -8px 0 20px; }
+.final-score-actions button { min-height: 42px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 11px; background: white; color: var(--ink); font-size: 9px; font-weight: 700; cursor: pointer; }
 
 .auth-shell { height: 100%; overflow-x: hidden; overflow-y: auto; overscroll-behavior-y: contain; -webkit-overflow-scrolling: touch; scrollbar-width: none; display: grid; grid-template-columns: minmax(0, 1.08fr) minmax(420px, .92fr); background: var(--paper); }
 .auth-visual { min-height: 100vh; position: relative; background: url("https://images.unsplash.com/photo-1779488389208-fd2dd9550919?crop=entropy&cs=tinysrgb&fit=crop&fm=jpg&q=88&w=1400") center 40%/cover; color: white; overflow: hidden; }

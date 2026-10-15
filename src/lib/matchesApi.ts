@@ -34,10 +34,23 @@ export type MatchToss = {
   bowlerId: string;
 };
 
-export type MatchStatus = "draft" | "ready" | "live" | "paused" | "awaiting-second-innings" | "completed" | "abandoned";
+export type MatchStatus =
+  | "draft"
+  | "ready"
+  | "live"
+  | "paused"
+  | "awaiting-second-innings"
+  | "completed"
+  | "abandoned";
 
 export type ExtraType = "wide" | "no-ball" | "bye" | "leg-bye";
-export type DismissalType = "bowled" | "caught" | "lbw" | "run-out" | "stumped" | "hit-wicket";
+export type DismissalType =
+  | "bowled"
+  | "caught"
+  | "lbw"
+  | "run-out"
+  | "stumped"
+  | "hit-wicket";
 
 export type ScoreDelivery = {
   id: string;
@@ -53,7 +66,12 @@ export type ScoreDelivery = {
   extraRuns: number;
   legal: boolean;
   boundary?: 4 | 6;
-  wicket?: { playerId: string; type: DismissalType; fielderId?: string; survivingEnd?: "striker" | "non-striker" };
+  wicket?: {
+    playerId: string;
+    type: DismissalType;
+    fielderId?: string;
+    survivingEnd?: "striker" | "non-striker";
+  };
   label: string;
   createdAt: string;
 };
@@ -65,6 +83,9 @@ export type MatchInnings = {
   legalBalls: number;
   deliveries: ScoreDelivery[];
   dismissed: string[];
+  battingOrder?: string[];
+  retiredNotOut?: string[];
+  manuallyFinalized?: boolean;
 };
 
 export type MatchScoreState = {
@@ -114,7 +135,14 @@ export type CricketMatch = {
     MatchTeam["id"],
     { kind: "roster" | "temporary"; players: MatchPlayer[] }
   >;
-  corrections?: Array<{ id: string; deliveryId: string; original: unknown; replacement: unknown; actorId: string; createdAt: string }>;
+  corrections?: Array<{
+    id: string;
+    deliveryId: string;
+    original: unknown;
+    replacement: unknown;
+    actorId: string;
+    createdAt: string;
+  }>;
 };
 
 const apiUrl = `https://${projectId}.supabase.co/functions/v1/cricapp-api`;
@@ -135,14 +163,27 @@ async function request(path: string, options?: RequestInit) {
   try {
     result = text ? JSON.parse(text) : {};
   } catch {
-    throw new Error(response.status === 404 ? "The match service is not deployed yet." : `Invalid match service response (${response.status})`);
+    throw new Error(
+      response.status === 404
+        ? "The match service is not deployed yet."
+        : `Invalid match service response (${response.status})`,
+    );
   }
-  if (!response.ok) throw new Error((result.error as string) || `Unable to complete this request (${response.status})`);
+  if (!response.ok)
+    throw new Error(
+      (result.error as string) ||
+        `Unable to complete this request (${response.status})`,
+    );
   return result;
 }
 
-export async function createMatch(input: Omit<CricketMatch, "id" | "status" | "createdAt" | "createdBy">): Promise<CricketMatch> {
-  const result = await request("/matches", { method: "POST", body: JSON.stringify(input) });
+export async function createMatch(
+  input: Omit<CricketMatch, "id" | "status" | "createdAt" | "createdBy">,
+): Promise<CricketMatch> {
+  const result = await request("/matches", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
   return result.match as CricketMatch;
 }
 
@@ -166,7 +207,11 @@ export async function getMatch(matchId: string): Promise<CricketMatch> {
   return result.match as CricketMatch;
 }
 
-export async function saveMatchScore(matchId: string, score: MatchScoreState, version: number): Promise<CricketMatch> {
+export async function saveMatchScore(
+  matchId: string,
+  score: MatchScoreState,
+  version: number,
+): Promise<CricketMatch> {
   const result = await request(`/matches/${matchId}/score`, {
     method: "PUT",
     body: JSON.stringify({ score, version }),
@@ -174,7 +219,10 @@ export async function saveMatchScore(matchId: string, score: MatchScoreState, ve
   return result.match as CricketMatch;
 }
 
-export async function updateMatchStatus(matchId: string, status: "paused" | "abandoned"): Promise<CricketMatch> {
+export async function updateMatchStatus(
+  matchId: string,
+  status: "paused" | "abandoned",
+): Promise<CricketMatch> {
   const result = await request(`/matches/${matchId}/status`, {
     method: "PUT",
     body: JSON.stringify({ status }),

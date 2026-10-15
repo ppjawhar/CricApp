@@ -21,6 +21,7 @@ import {
 import { deleteMatch, listMatches, type CricketMatch } from "./lib/matchesApi";
 import MatchSetup from "./matches/MatchSetup";
 import ScoringPage from "./matches/ScoringPage";
+import useConfirmSheet from "./components/ConfirmSheet";
 import PageHeader from "./components/PageHeader";
 
 type IconName =
@@ -490,6 +491,11 @@ function getInitials(name?: string, email?: string) {
   return email?.slice(0, 2).toUpperCase() || "CP";
 }
 
+function matchStatusLabel(status: CricketMatch["status"]) {
+  if (status === "live" || status === "paused") return "Live";
+  return status.replaceAll("-", " ");
+}
+
 function Home({
   onResume,
   onQuick,
@@ -607,7 +613,7 @@ function Home({
                 <span />{" "}
                 {activeMatch.status === "ready"
                   ? "READY TO START"
-                  : activeMatch.status.replaceAll("-", " ").toUpperCase()}
+                  : matchStatusLabel(activeMatch.status).toUpperCase()}
               </div>
               <div className="hero-match">
                 <div>
@@ -645,7 +651,8 @@ function Home({
                 >
                   {activeMatch.permissions?.canScore
                     ? "Resume scoring"
-                    : "View live score"} <Icon name="arrow" />
+                    : "View live score"}{" "}
+                  <Icon name="arrow" />
                 </Button>
               </div>
             </div>
@@ -711,7 +718,9 @@ function Home({
             </Button>
           </div>
           <div
-            className={`club-list ${clubsLoading ? "home-club-list-skeleton" : ""}`}
+            className={`club-list ${
+              clubsLoading ? "home-club-list-skeleton" : ""
+            }`}
             aria-busy={clubsLoading}
             aria-label={clubsLoading ? "Loading your clubs" : undefined}
           >
@@ -836,11 +845,14 @@ function Clubs({
   onStart: (club: Club) => void;
   initialClub?: Club | null;
 }) {
+  const { confirm, confirmationSheet } = useConfirmSheet();
   const [view, setView] = useState<"list" | "create" | "detail">(
     initialClub ? "detail" : "list",
   );
   const [myClubs, setMyClubs] = useState<Club[]>([]);
-  const [selectedClub, setSelectedClub] = useState<Club | null>(initialClub ?? null);
+  const [selectedClub, setSelectedClub] = useState<Club | null>(
+    initialClub ?? null,
+  );
   const [detailTab, setDetailTab] = useState<
     "overview" | "roster" | "matches" | "stats" | "members"
   >("overview");
@@ -892,9 +904,12 @@ function Clubs({
     setError("");
     getClub(initialClub.id)
       .then((club) => active && setSelectedClub(club))
-      .catch((reason) =>
-        active &&
-        setError(reason instanceof Error ? reason.message : "Unable to load club"),
+      .catch(
+        (reason) =>
+          active &&
+          setError(
+            reason instanceof Error ? reason.message : "Unable to load club",
+          ),
       );
     return () => {
       active = false;
@@ -1109,7 +1124,13 @@ function Clubs({
   async function removeMember(member: ClubMember) {
     if (!selectedClub) return;
     const label = member.name || member.email || "this member";
-    if (!window.confirm(`Remove ${label} from ${selectedClub.name}?`)) return;
+    const confirmed = await confirm({
+      title: "Remove club member?",
+      message: `${label} will lose access to ${selectedClub.name}.`,
+      confirmLabel: "Remove member",
+      tone: "danger",
+    });
+    if (!confirmed) return;
     setSaving(true);
     setError("");
     try {
@@ -1274,7 +1295,9 @@ function Clubs({
             )}
           </section>
           <div
-            className={`club-tabs ${detailTabs.length === 4 ? "four-tabs" : ""}`}
+            className={`club-tabs ${
+              detailTabs.length === 4 ? "four-tabs" : ""
+            }`}
           >
             {detailTabs.map((tab) => (
               <Button
@@ -1377,14 +1400,17 @@ function Clubs({
                   {(selectedClub.members || []).map((member) => (
                     <div className="club-member-row" key={member.userId}>
                       <Avatar
-                        initials={getInitials(member.name || member.email || member.role)}
+                        initials={getInitials(
+                          member.name || member.email || member.role,
+                        )}
                         tone="cream"
                       />
                       <span>
                         <strong>{member.name || "Club member"}</strong>
                         <small>{member.email || "Email unavailable"}</small>
                         <small>
-                          Joined {new Date(member.joinedAt).toLocaleDateString()}
+                          Joined{" "}
+                          {new Date(member.joinedAt).toLocaleDateString()}
                           {member.isCreator ? " · Club creator" : ""}
                         </small>
                       </span>
@@ -1474,7 +1500,9 @@ function Clubs({
                 <div className="detail-roster">
                   {selectedClub.players.map((player, index) => (
                     <div
-                      className={`detail-player ${player.status === "archived" ? "archived-player" : ""}`}
+                      className={`detail-player ${
+                        player.status === "archived" ? "archived-player" : ""
+                      }`}
                       key={player.id}
                     >
                       <span className="player-number">
@@ -1649,14 +1677,19 @@ function Clubs({
                 </div>
                 <div className="member-sheet-profile">
                   <Avatar
-                    initials={getInitials(editingMember.name || editingMember.email || editingMember.role)}
+                    initials={getInitials(
+                      editingMember.name ||
+                        editingMember.email ||
+                        editingMember.role,
+                    )}
                     tone="cream"
                   />
                   <span>
                     <strong>{editingMember.name || "Club member"}</strong>
                     <small>{editingMember.email || "Email unavailable"}</small>
                     <small>
-                      Joined {new Date(editingMember.joinedAt).toLocaleDateString()}
+                      Joined{" "}
+                      {new Date(editingMember.joinedAt).toLocaleDateString()}
                       {editingMember.isCreator ? " · Club creator" : ""}
                     </small>
                   </span>
@@ -1665,7 +1698,9 @@ function Clubs({
                   <span>Club role</span>
                   <select
                     value={memberRole}
-                    onChange={(event) => setMemberRole(event.target.value as ClubMember["role"])}
+                    onChange={(event) =>
+                      setMemberRole(event.target.value as ClubMember["role"])
+                    }
                   >
                     <option value="member">Member</option>
                     <option value="organizer">Organizer</option>
@@ -1912,6 +1947,7 @@ function Clubs({
               </div>
             </div>
           )}
+          {confirmationSheet}
         </div>
       </>
     );
@@ -1926,7 +1962,9 @@ function Clubs({
     <>
       <PageHeader
         title="Clubs"
-        eyebrow={`${myClubs.length} MEMBERSHIP${myClubs.length === 1 ? "" : "S"}`}
+        eyebrow={`${myClubs.length} MEMBERSHIP${
+          myClubs.length === 1 ? "" : "S"
+        }`}
         action={
           <Button
             className="create-club-button"
@@ -2032,6 +2070,7 @@ function Matches({
   onCreateQuick: () => void;
   onCreateClub: (club: Club) => void;
 }) {
+  const { confirm, confirmationSheet } = useConfirmSheet();
   const [matches, setMatches] = useState<CricketMatch[]>([]);
   const [clubs, setClubs] = useState<Club[]>([]);
   const [filter, setFilter] = useState<
@@ -2084,12 +2123,13 @@ function Matches({
 
   async function removeMatch(match: CricketMatch) {
     const name = `${match.teams[0].name} vs ${match.teams[1].name}`;
-    if (
-      !window.confirm(
-        `Remove ${name}? This permanently removes its scorecard and statistics.`,
-      )
-    )
-      return;
+    const confirmed = await confirm({
+      title: "Remove match?",
+      message: `${name} and its scorecard and statistics will be permanently removed.`,
+      confirmLabel: "Remove match",
+      tone: "danger",
+    });
+    if (!confirmed) return;
     try {
       await deleteMatch(match.id);
       localStorage.removeItem(`cricapp-match-score:${match.id}`);
@@ -2106,12 +2146,15 @@ function Matches({
 
   if (selectedMatch)
     return (
-      <MatchScorecard
-        match={selectedMatch}
-        onBack={() => setSelectedMatch(null)}
-        onPlayAgain={() => onPlayAgain(selectedMatch)}
-        onRemove={() => removeMatch(selectedMatch)}
-      />
+      <>
+        <MatchScorecard
+          match={selectedMatch}
+          onBack={() => setSelectedMatch(null)}
+          onPlayAgain={() => onPlayAgain(selectedMatch)}
+          onRemove={() => removeMatch(selectedMatch)}
+        />
+        {confirmationSheet}
+      </>
     );
 
   return (
@@ -2225,7 +2268,7 @@ function Matches({
                   >
                     <div className="database-match-top">
                       <span className={`match-status-badge ${match.status}`}>
-                        {match.status}
+                        {matchStatusLabel(match.status)}
                       </span>
                       <small>
                         {created.toLocaleDateString(undefined, {
@@ -2341,6 +2384,7 @@ function Matches({
             </div>
           </div>
         )}
+        {confirmationSheet}
       </div>
     </>
   );
@@ -2368,13 +2412,15 @@ function MatchScorecard({
     <>
       <PageHeader
         title="Scorecard"
-        eyebrow={match.status.toUpperCase()}
+        eyebrow={matchStatusLabel(match.status).toUpperCase()}
         onBack={onBack}
         backLabel="Back to all matches"
       />
       <div className="page scorecard-page">
         <section className="scorecard-hero">
-          <span className="eyebrow light">{match.status.toUpperCase()}</span>
+          <span className="eyebrow light">
+            {matchStatusLabel(match.status).toUpperCase()}
+          </span>
           <h2>
             {score?.result ||
               (match.status === "abandoned"
@@ -2422,11 +2468,20 @@ function MatchScorecard({
           )!;
           const batting = new Map<
             string,
-            { runs: number; balls: number; fours: number; sixes: number }
+            {
+              runs: number;
+              balls: number;
+              fours: number;
+              sixes: number;
+            }
           >();
           const bowling = new Map<
             string,
-            { runs: number; balls: number; wickets: number }
+            {
+              runs: number;
+              balls: number;
+              wickets: number;
+            }
           >();
           innings.deliveries.forEach((delivery) => {
             const bat = batting.get(delivery.strikerId) || {
@@ -2662,15 +2717,17 @@ function Profile({
               <span className="eyebrow">PENDING INVITATIONS</span>
               <h2>
                 {invitations.length
-                  ? `${invitations.length} club invitation${invitations.length === 1 ? "" : "s"}`
+                  ? `${invitations.length} club invitation${
+                      invitations.length === 1 ? "" : "s"
+                    }`
                   : "You’re all caught up"}
               </h2>
-              <p>
-                Review invitations from clubs and choose whether to join.
-              </p>
+              <p>Review invitations from clubs and choose whether to join.</p>
             </div>
           </section>
-          {invitationError && <div className="club-error">{invitationError}</div>}
+          {invitationError && (
+            <div className="club-error">{invitationError}</div>
+          )}
           {invitations.length ? (
             <section className="invitation-list">
               {invitations.map((invitation) => {
@@ -2685,13 +2742,16 @@ function Profile({
                       <span className="eyebrow">JOIN AS {invitation.role}</span>
                       <h3>{invitation.clubName}</h3>
                       <p>
-                        Invited {new Date(invitation.createdAt).toLocaleDateString()}
+                        Invited{" "}
+                        {new Date(invitation.createdAt).toLocaleDateString()}
                       </p>
                     </div>
                     <div className="invitation-actions">
                       <button
                         type="button"
-                        onClick={() => answerInvitation(invitation.id, "decline")}
+                        onClick={() =>
+                          answerInvitation(invitation.id, "decline")
+                        }
                         disabled={responding}
                       >
                         Decline
@@ -2699,7 +2759,9 @@ function Profile({
                       <button
                         type="button"
                         className="accept"
-                        onClick={() => answerInvitation(invitation.id, "accept")}
+                        onClick={() =>
+                          answerInvitation(invitation.id, "accept")
+                        }
                         disabled={responding}
                       >
                         {responding ? "Updating…" : "Accept"}

@@ -21,11 +21,14 @@ import {
   bowlerConcededRuns,
   canChangeBowlerBeforeDelivery,
   completedRunsForDelivery,
+  currentOverDeliveries,
   isLegalDelivery,
   nextFreeHit,
+  wideDeliveryLabel,
   wicketLimitAfterLastManToggle,
 } from "../lib/cricketRules";
 import { createId } from "../lib/id";
+import useConfirmSheet from "../components/ConfirmSheet";
 import PageHeader from "../components/PageHeader";
 
 type Phase =
@@ -75,6 +78,8 @@ function initialState(match: CricketMatch): ScoreState {
         legalBalls: 0,
         deliveries: [],
         dismissed: [],
+        battingOrder: [match.toss.strikerId, match.toss.nonStrikerId],
+        retiredNotOut: [],
       },
     ],
     activeInnings: 0,
@@ -95,9 +100,8 @@ function normalizeState(value: ScoreState, match: CricketMatch): ScoreState {
       value.strikerId,
       value.nonStrikerId,
     ],
-    innings: value.innings.map((innings, inningsIndex) => ({
-      ...innings,
-      deliveries: innings.deliveries.map((delivery) => {
+    innings: value.innings.map((innings, inningsIndex) => {
+      const deliveries = innings.deliveries.map((delivery) => {
         sequence += 1;
         const legacy = delivery as ScoreDelivery & { batterId?: string };
         const strikerId =
@@ -107,6 +111,12 @@ function normalizeState(value: ScoreState, match: CricketMatch): ScoreState {
           : delivery.extraType === "wide"
             ? Math.max(0, delivery.extraRuns - match.rules.widePenalty)
             : delivery.batRuns || delivery.extraRuns;
+        const normalizedLabel =
+          delivery.extraType === "wide"
+            ? `${wideDeliveryLabel(delivery.extraRuns, match.rules.widePenalty)}${delivery.wicket ? "+W" : ""}`
+            : delivery.label === "•"
+              ? "0"
+              : delivery.label;
         return {
           ...delivery,
           sequence,
@@ -114,10 +124,27 @@ function normalizeState(value: ScoreState, match: CricketMatch): ScoreState {
           strikerId,
           nonStrikerId: delivery.nonStrikerId || value.nonStrikerId,
           completedRuns,
+          label: normalizedLabel,
           createdAt: delivery.createdAt || new Date().toISOString(),
         };
-      }),
-    })),
+      });
+      const recordedOrder = deliveries.flatMap((delivery) => [
+        delivery.strikerId,
+        delivery.nonStrikerId,
+      ]);
+      const activeOrder =
+        inningsIndex === value.activeInnings
+          ? [value.strikerId, value.nonStrikerId]
+          : [];
+      return {
+        ...innings,
+        deliveries,
+        battingOrder:
+          innings.battingOrder ||
+          Array.from(new Set([...recordedOrder, ...activeOrder])),
+        retiredNotOut: innings.retiredNotOut || [],
+      };
+    }),
   };
 }
 
@@ -125,6 +152,22 @@ function playerName(team: MatchTeam, id: string) {
   return (
     team.players.find((player) => player.id === id)?.name || "Select player"
   );
+}
+
+function teamInitials(name: string) {
+  return name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((word) => word[0])
+    .join("")
+    .toUpperCase();
+}
+
+function wicketLimitForTeam(match: CricketMatch, teamId: MatchTeam["id"]) {
+  return teamId === "team-a"
+    ? match.rules.wicketLimits.teamA
+    : match.rules.wicketLimits.teamB;
 }
 
 export default function ScoringPage({
@@ -136,6 +179,7 @@ export default function ScoringPage({
   onExit: () => void;
   onComplete: () => void;
 }) {
+  const { confirm, confirmationSheet } = useConfirmSheet();
   const [match, setMatch] = useState(initialMatch);
   const initialCanScore = match.permissions?.canScore ?? !match.clubId;
   const storageKey = `cricapp-match-score:${match.id}`;
@@ -200,6 +244,12 @@ export default function ScoringPage({
   const [editingRules, setEditingRules] = useState(false);
   const [savingRules, setSavingRules] = useState(false);
   const [changingBowler, setChangingBowler] = useState(false);
+  const [changingBatterEnd, setChangingBatterEnd] = useState<
+    "striker" | "non-striker" | null
+  >(null);
+  const [editingInningsIndex, setEditingInningsIndex] = useState<number | null>(
+    null,
+  );
   const versionRef = useRef(localRecord?.version ?? match.version ?? 0);
   const syncChain = useRef(Promise.resolve());
   const syncTimerRef = useRef<number | undefined>(undefined);
@@ -338,6 +388,7 @@ export default function ScoringPage({
       setEditingTeams(false);
       setEditingRules(false);
       setChangingBowler(false);
+      setChangingBatterEnd(null);
     }
   }, [access.canScore]);
 
@@ -356,6 +407,17 @@ export default function ScoringPage({
       : match.rules.wicketLimits.teamB;
   const ballsRemaining =
     match.rules.overs * match.rules.ballsPerOver - innings.legalBalls;
+  const currentRunRate = innings.legalBalls
+    ? (innings.runs * match.rules.ballsPerOver) / innings.legalBalls
+    : 0;
+  const requiredRuns = target ? Math.max(0, target - innings.runs) : 0;
+  const requiredRunRate = target
+    ? ballsRemaining > 0
+      ? (requiredRuns * match.rules.ballsPerOver) / ballsRemaining
+      : requiredRuns === 0
+        ? 0
+        : null
+    : null;
 
   const batterFigures = useMemo(() => {
     const figures = new Map<string, { runs: number; balls: number }>();
@@ -386,25 +448,11 @@ export default function ScoringPage({
   }, [innings.deliveries, state.bowlerId]);
 
   const thisOver = useMemo(() => {
-    const result: ScoreDelivery[] = [];
-    for (let index = innings.deliveries.length - 1; index >= 0; index -= 1) {
-      if (
-        result.filter((delivery) => delivery.legal).length >=
-          innings.legalBalls % match.rules.ballsPerOver &&
-        innings.legalBalls % match.rules.ballsPerOver !== 0
-      )
-        break;
-      result.unshift(innings.deliveries[index]);
-      if (
-        innings.legalBalls % match.rules.ballsPerOver === 0 &&
-        result.some((delivery) => delivery.legal)
-      ) {
-        const legal = result.filter((delivery) => delivery.legal).length;
-        if (legal >= match.rules.ballsPerOver) break;
-      }
-    }
-    return result.slice(-10);
-  }, [innings.deliveries, innings.legalBalls, match.rules.ballsPerOver]);
+    return currentOverDeliveries(
+      innings.deliveries,
+      match.rules.ballsPerOver,
+    ).slice(-10);
+  }, [innings.deliveries, match.rules.ballsPerOver]);
 
   function pushHistory() {
     setHistory((current) => [...current.slice(-19), structuredClone(state)]);
@@ -419,8 +467,12 @@ export default function ScoringPage({
     )!;
     const firstRuns = next.innings[0].runs;
     const second = next.innings[1];
+    const secondWicketLimit =
+      second.battingTeamId === "team-a"
+        ? match.rules.wicketLimits.teamA
+        : match.rules.wicketLimits.teamB;
     if (successfulChase) {
-      next.result = `${secondTeam.name} won by ${Math.max(0, wicketLimit - second.wickets)} wickets`;
+      next.result = `${secondTeam.name} won by ${Math.max(0, secondWicketLimit - second.wickets)} wickets`;
     } else if (second.runs === firstRuns) {
       next.result = "Match tied";
     } else {
@@ -445,24 +497,35 @@ export default function ScoringPage({
           : 0;
       const baseLabel =
         input.extraType === "wide"
-          ? `${extras}Wd`
+          ? wideDeliveryLabel(extras, match.rules.widePenalty)
           : input.extraType === "no-ball"
-            ? `Nb${batRuns ? `+${batRuns}` : noBallCompleted ? `+${noBallCompleted}${input.runningExtraType === "leg-bye" ? "Lb" : "B"}` : ""}`
+            ? `Nb${
+                batRuns
+                  ? `+${batRuns}`
+                  : noBallCompleted
+                    ? `+${noBallCompleted}${
+                        input.runningExtraType === "leg-bye" ? "Lb" : "B"
+                      }`
+                    : ""
+              }`
             : input.extraType === "bye"
               ? `${extras}B`
               : input.extraType === "leg-bye"
                 ? `${extras}Lb`
                 : batRuns === 0
-                  ? "•"
+                  ? "0"
                   : String(batRuns);
       const label = input.wicket
-        ? `${baseLabel === "•" ? "" : `${baseLabel}+`}W`
+        ? `${baseLabel === "0" ? "" : `${baseLabel}+`}W`
         : baseLabel;
       active.runs += total;
       if (legal) active.legalBalls += 1;
       if (input.wicket) {
         active.wickets += 1;
         active.dismissed.push(input.wicket.playerId);
+        active.retiredNotOut = (active.retiredNotOut || []).filter(
+          (id) => id !== input.wicket?.playerId,
+        );
         next.pendingDismissedEnd =
           input.wicket.playerId === next.nonStrikerId
             ? "non-striker"
@@ -706,14 +769,27 @@ export default function ScoringPage({
     window.setTimeout(() => setCommitting(false), 180);
   }
 
-  function undo() {
+  async function undo() {
     const previous = history[history.length - 1];
     if (!previous) return;
-    if (
-      (state.phase === "innings-break" || state.phase === "completed") &&
-      !window.confirm("Undo the delivery that ended this innings or match?")
-    )
-      return;
+    if (state.phase === "innings-break" || state.phase === "completed") {
+      const restoresCompletedScore =
+        state.phase === "completed" && previous.phase === "completed";
+      const confirmed = await confirm({
+        title: restoresCompletedScore
+          ? "Undo final score update?"
+          : "Undo innings-ending delivery?",
+        message: restoresCompletedScore
+          ? "The previous innings totals and match result will be restored."
+          : state.phase === "completed"
+            ? "The match will reopen so you can continue scoring."
+            : "The first innings will reopen so you can continue scoring.",
+        confirmLabel: restoresCompletedScore
+          ? "Restore previous score"
+          : "Undo delivery",
+      });
+      if (!confirmed) return;
+    }
     setState(previous);
     setHistory((current) => current.slice(0, -1));
     setDraft(emptyDraft());
@@ -728,7 +804,7 @@ export default function ScoringPage({
       setToast("Pending delivery cleared");
       return;
     }
-    undo();
+    void undo();
   }
 
   function chooseNewBatter(playerId: string) {
@@ -738,6 +814,13 @@ export default function ScoringPage({
         next.nonStrikerId = playerId;
       else next.strikerId = playerId;
       const dismissedId = next.pendingDismissedPlayerId;
+      const active = next.innings[next.activeInnings];
+      active.battingOrder = active.battingOrder || [];
+      if (!active.battingOrder.includes(playerId))
+        active.battingOrder.push(playerId);
+      active.retiredNotOut = (active.retiredNotOut || []).filter(
+        (id) => id !== playerId,
+      );
       next.batterDisplayOrder = (
         next.batterDisplayOrder || [next.strikerId, next.nonStrikerId]
       ).map((id) => (id === dismissedId ? playerId : id)) as [string, string];
@@ -766,6 +849,34 @@ export default function ScoringPage({
     setChangingBowler(true);
   }
 
+  function changeActiveBatter(playerId: string) {
+    if (!changingBatterEnd) return;
+    pushHistory();
+    setState((current) => {
+      const next = structuredClone(current);
+      const active = next.innings[next.activeInnings];
+      const outgoingId =
+        changingBatterEnd === "striker" ? next.strikerId : next.nonStrikerId;
+      active.retiredNotOut = Array.from(
+        new Set([...(active.retiredNotOut || []), outgoingId]),
+      ).filter((id) => id !== playerId);
+      active.battingOrder = active.battingOrder || [
+        next.strikerId,
+        next.nonStrikerId,
+      ];
+      if (!active.battingOrder.includes(playerId))
+        active.battingOrder.push(playerId);
+      if (changingBatterEnd === "striker") next.strikerId = playerId;
+      else next.nonStrikerId = playerId;
+      next.batterDisplayOrder = next.batterDisplayOrder.map((id) =>
+        id === outgoingId ? playerId : id,
+      ) as [string, string];
+      return next;
+    });
+    setChangingBatterEnd(null);
+    setToast("Batter changed; declared batter can return later");
+  }
+
   function startSecondInnings(
     strikerId: string,
     nonStrikerId: string,
@@ -784,6 +895,8 @@ export default function ScoringPage({
           legalBalls: 0,
           deliveries: [],
           dismissed: [],
+          battingOrder: [strikerId, nonStrikerId],
+          retiredNotOut: [],
         },
       ],
       activeInnings: 1,
@@ -854,30 +967,46 @@ export default function ScoringPage({
   }
 
   function endInnings() {
-    if (
-      !window.confirm(
-        state.activeInnings === 0
-          ? "End the first innings now?"
-          : "End the match with the current score?",
-      )
-    )
-      return;
+    setEditingInningsIndex(state.activeInnings);
+  }
+
+  function saveInningsSummary(
+    inningsIndex: number,
+    summary: { runs: number; wickets: number; legalBalls: number },
+  ) {
     pushHistory();
     setState((current) => {
       const next = structuredClone(current);
-      if (next.activeInnings === 0) next.phase = "innings-break";
-      else finishSecondInnings(next, false);
+      const updatedInnings = next.innings[inningsIndex];
+      if (!updatedInnings) return current;
+      updatedInnings.runs = summary.runs;
+      updatedInnings.wickets = summary.wickets;
+      updatedInnings.legalBalls = summary.legalBalls;
+      updatedInnings.manuallyFinalized = true;
+
+      if (current.phase === "completed") {
+        const second = next.innings[1];
+        finishSecondInnings(next, second.runs > next.innings[0].runs);
+      } else if (inningsIndex === 0) {
+        next.phase = "innings-break";
+      } else {
+        finishSecondInnings(next, summary.runs > next.innings[0].runs);
+      }
       return next;
     });
+    setDraft(emptyDraft());
+    setSheet(null);
+    setEditingInningsIndex(null);
   }
 
   async function abandonMatch() {
-    if (
-      !window.confirm(
-        "Abandon this match? The score will be kept and no winner will be recorded.",
-      )
-    )
-      return;
+    const confirmed = await confirm({
+      title: "Abandon match?",
+      message: "The score will be kept, but no winner will be recorded.",
+      confirmLabel: "Abandon match",
+      tone: "danger",
+    });
+    if (!confirmed) return;
     if (exitingRef.current) return;
     exitingRef.current = true;
     setExiting(true);
@@ -902,12 +1031,13 @@ export default function ScoringPage({
   }
 
   async function removeCurrentMatch() {
-    if (
-      !window.confirm(
-        `Remove ${match.teams[0].name} vs ${match.teams[1].name}? This permanently deletes the match and its score.`,
-      )
-    )
-      return;
+    const confirmed = await confirm({
+      title: "Remove match?",
+      message: `${match.teams[0].name} vs ${match.teams[1].name} and its score will be permanently deleted.`,
+      confirmLabel: "Remove match",
+      tone: "danger",
+    });
+    if (!confirmed) return;
     if (exitingRef.current) return;
     exitingRef.current = true;
     setExiting(true);
@@ -1042,83 +1172,29 @@ export default function ScoringPage({
     }
   }
 
-  function repairFromDelivery(deliveryId: string, remove: boolean) {
+  async function removeDelivery(deliveryId: string) {
     const deliveryIndex = innings.deliveries.findIndex(
       (delivery) => delivery.id === deliveryId,
     );
     if (deliveryIndex < 0) return;
     const original = innings.deliveries[deliveryIndex];
     const laterCount = innings.deliveries.length - deliveryIndex - 1;
-    if (
-      laterCount > 0 &&
-      !window.confirm(
-        `This correction changes earlier play. ${laterCount} later ${laterCount === 1 ? "delivery" : "deliveries"} must be removed and re-entered. Continue?`,
-      )
-    )
-      return;
-    let replacement: ScoreDelivery | null = original;
-    if (remove) {
-      if (
-        !window.confirm(
-          `Remove delivery ${original.sequence} and resume scoring from there?`,
-        )
-      )
-        return;
-      replacement = null;
-    } else {
-      const currentRuns =
-        original.extraType === "wide"
-          ? Math.max(0, original.extraRuns - match.rules.widePenalty)
-          : original.extraType === "no-ball" && original.runningExtraType
-            ? Math.max(0, original.extraRuns - match.rules.noBallPenalty)
-            : original.extraType === "bye" || original.extraType === "leg-bye"
-              ? original.extraRuns
-              : original.batRuns;
-      const answer = window.prompt(
-        "Correct completed or bat runs for this delivery",
-        String(currentRuns),
-      );
-      if (answer === null) return;
-      const runs = Number(answer);
-      if (!Number.isInteger(runs) || runs < 0 || runs > 99)
-        return setToast("Enter a whole number from 0 to 99");
-      replacement = { ...original };
-      if (original.extraType === "wide")
-        replacement.extraRuns = match.rules.widePenalty + runs;
-      else if (original.extraType === "no-ball" && original.runningExtraType)
-        replacement.extraRuns = match.rules.noBallPenalty + runs;
-      else if (original.extraType === "bye" || original.extraType === "leg-bye")
-        replacement.extraRuns = runs;
-      else replacement.batRuns = runs;
-      replacement.completedRuns = completedRunsForDelivery(
-        replacement,
-        match.rules.widePenalty,
-        match.rules.noBallPenalty,
-      );
-      replacement.boundary =
-        !replacement.extraType && (runs === 4 || runs === 6) ? runs : undefined;
-      replacement.label = replacement.wicket
-        ? `${runs || ""}W`
-        : replacement.extraType === "wide"
-          ? `${replacement.extraRuns}Wd`
-          : replacement.extraType === "no-ball"
-            ? `Nb${runs ? `+${runs}` : ""}`
-            : replacement.extraType === "bye"
-              ? `${runs}B`
-              : replacement.extraType === "leg-bye"
-                ? `${runs}Lb`
-                : runs
-                  ? String(runs)
-                  : "•";
-    }
+    const confirmed = await confirm({
+      title: "Remove delivery?",
+      message: laterCount
+        ? `Delivery ${original.sequence} and ${laterCount} later ${
+            laterCount === 1 ? "delivery" : "deliveries"
+          } will be removed. Scoring will resume from that point.`
+        : `Delivery ${original.sequence} will be removed. Scoring will resume from that point.`,
+      confirmLabel: "Remove delivery",
+      tone: "danger",
+    });
+    if (!confirmed) return;
     pushHistory();
     setState((current) => {
       const next = structuredClone(current);
       const repaired = next.innings[next.activeInnings];
-      repaired.deliveries = [
-        ...repaired.deliveries.slice(0, deliveryIndex),
-        ...(replacement ? [replacement] : []),
-      ];
+      repaired.deliveries = repaired.deliveries.slice(0, deliveryIndex);
       repaired.runs = repaired.deliveries.reduce(
         (sum, delivery) => sum + delivery.batRuns + delivery.extraRuns,
         0,
@@ -1163,8 +1239,8 @@ export default function ScoringPage({
           : undefined;
         next.pendingOverEnd = Boolean(
           last.wicket &&
-          last.legal &&
-          repaired.legalBalls % match.rules.ballsPerOver === 0,
+            last.legal &&
+            repaired.legalBalls % match.rules.ballsPerOver === 0,
         );
       } else {
         next.phase = "live";
@@ -1182,7 +1258,7 @@ export default function ScoringPage({
       return next;
     });
     setSheet(null);
-    setToast("Correction saved; resume from the revised delivery");
+    setToast("Delivery removed; resume scoring from that point");
   }
 
   if (editingTeams) {
@@ -1221,62 +1297,106 @@ export default function ScoringPage({
   if (state.phase === "completed") {
     const leaveCompleted = access.canScore ? completeAndExit : onExit;
     return (
-      <main className="full-score-shell score-complete-page">
-        <PageHeader
-          title="Match complete"
-          eyebrow="RESULT"
-          onBack={leaveCompleted}
-          backLabel="Back to match list"
-          backLoading={exiting}
-        />
-        <div className="score-scroll">
-          <section className="score-complete-hero">
-            <span>MATCH COMPLETE</span>
-            <h2>{state.result}</h2>
-            <p>
-              {match.teams[0].name} vs {match.teams[1].name}
-            </p>
-          </section>
-          <div className="final-innings-list">
-            {state.innings.map((item, index) => {
-              const team = match.teams.find(
-                (entry) => entry.id === item.battingTeamId,
-              )!;
-              return (
-                <div key={team.id}>
-                  <span>{index + 1}</span>
-                  <strong>{team.name}</strong>
-                  <b>
-                    {item.runs}/{item.wickets}
-                  </b>
-                  <small>
-                    {Math.floor(item.legalBalls / match.rules.ballsPerOver)}.
-                    {item.legalBalls % match.rules.ballsPerOver} ov
-                  </small>
-                </div>
-              );
-            })}
-          </div>
-          {access.canScore && history.length > 0 && (
+      <>
+        <main className="full-score-shell score-complete-page">
+          <PageHeader
+            title="Match complete"
+            eyebrow="RESULT"
+            onBack={leaveCompleted}
+            backLabel="Back to match list"
+            backLoading={exiting}
+          />
+          <div className="score-scroll">
+            <section className="score-complete-hero">
+              <span>MATCH COMPLETE</span>
+              <h2>{state.result}</h2>
+              <p>
+                {match.teams[0].name} vs {match.teams[1].name}
+              </p>
+            </section>
+            <div className="final-innings-list">
+              {state.innings.map((item, index) => {
+                const team = match.teams.find(
+                  (entry) => entry.id === item.battingTeamId,
+                )!;
+                return (
+                  <div key={team.id}>
+                    <span>{index + 1}</span>
+                    <strong>{team.name}</strong>
+                    <b>
+                      {item.runs}/{item.wickets}
+                    </b>
+                    <small>
+                      {Math.floor(item.legalBalls / match.rules.ballsPerOver)}.
+                      {item.legalBalls % match.rules.ballsPerOver} ov
+                    </small>
+                  </div>
+                );
+              })}
+            </div>
+            {access.canScore && (
+              <div className="final-score-actions">
+                {state.innings.map((item, index) => {
+                  const team = match.teams.find(
+                    (entry) => entry.id === item.battingTeamId,
+                  )!;
+                  return (
+                    <button
+                      type="button"
+                      key={item.battingTeamId}
+                      onClick={() => setEditingInningsIndex(index)}
+                      disabled={exiting}
+                    >
+                      Edit {team.name} score
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            {access.canScore && history.length > 0 && (
+              <button
+                type="button"
+                className="score-secondary-action"
+                onClick={undo}
+                disabled={exiting}
+              >
+                Undo last scoring change
+              </button>
+            )}
             <button
               type="button"
-              className="score-secondary-action"
-              onClick={undo}
+              className="score-primary-action"
+              onClick={leaveCompleted}
               disabled={exiting}
             >
-              Undo last delivery
+              {access.canScore && exiting ? "Saving match…" : "View match list"}
             </button>
-          )}
-          <button
-            type="button"
-            className="score-primary-action"
-            onClick={leaveCompleted}
-            disabled={exiting}
-          >
-            {access.canScore && exiting ? "Saving match…" : "View match list"}
-          </button>
-        </div>
-      </main>
+          </div>
+        </main>
+        {editingInningsIndex !== null && state.innings[editingInningsIndex] && (
+          <InningsSummarySheet
+            team={
+              match.teams.find(
+                (team) =>
+                  team.id === state.innings[editingInningsIndex!].battingTeamId,
+              )!
+            }
+            innings={state.innings[editingInningsIndex]}
+            inningsNumber={editingInningsIndex + 1}
+            rules={match.rules}
+            wicketLimit={wicketLimitForTeam(
+              match,
+              state.innings[editingInningsIndex].battingTeamId,
+            )}
+            editingCompletedMatch
+            onDismiss={() => setEditingInningsIndex(null)}
+            onSave={(summary) =>
+              saveInningsSummary(editingInningsIndex, summary)
+            }
+          />
+        )}
+        {confirmationSheet}
+      </>
     );
   }
 
@@ -1308,17 +1428,24 @@ export default function ScoringPage({
         </main>
       );
     return (
-      <SecondInningsSetup
-        batting={secondBatting}
-        fielding={secondFielding}
-        target={innings.runs + 1}
-        exiting={exiting}
-        onBack={pauseAndExit}
-        onUndo={undo}
-        onEditTeams={() => setEditingTeams(true)}
-        onEditRules={() => setEditingRules(true)}
-        onStart={startSecondInnings}
-      />
+      <>
+        <SecondInningsSetup
+          batting={secondBatting}
+          fielding={secondFielding}
+          target={innings.runs + 1}
+          exiting={exiting}
+          onBack={pauseAndExit}
+          onUndo={undo}
+          onEditTeams={() => setEditingTeams(true)}
+          onEditRules={() => setEditingRules(true)}
+          onStart={startSecondInnings}
+          onEnterFinal={(strikerId, nonStrikerId, bowlerId) => {
+            startSecondInnings(strikerId, nonStrikerId, bowlerId);
+            setEditingInningsIndex(1);
+          }}
+        />
+        {confirmationSheet}
+      </>
     );
   }
 
@@ -1335,10 +1462,17 @@ export default function ScoringPage({
   const draftIsLegal = isLegalDelivery(draft.extraType);
   const nextCompletesOver =
     draftIsLegal && (innings.legalBalls + 1) % match.rules.ballsPerOver === 0;
+  const ballsLeftInOver =
+    match.rules.ballsPerOver - (innings.legalBalls % match.rules.ballsPerOver);
   const draftRuns = draft.batRuns + draft.extraRuns;
   const hasDraftSelection = Boolean(
     draft.runsSelected || draft.extraType || draft.wicket,
   );
+  const canChangeBatter =
+    access.canScore &&
+    state.phase === "live" &&
+    !hasDraftSelection &&
+    availableBatters.length > 0;
   const canChangeBowler =
     access.canScore &&
     state.phase === "live" &&
@@ -1382,7 +1516,9 @@ export default function ScoringPage({
     <main className="full-score-shell">
       <PageHeader
         title="Live scoring"
-        eyebrow={`${access.canScore ? "LIVE" : "VIEW ONLY"} · ${state.activeInnings === 0 ? "1ST" : "2ND"} INNINGS`}
+        eyebrow={`${access.canScore ? "LIVE" : "VIEW ONLY"} · ${
+          state.activeInnings === 0 ? "1ST" : "2ND"
+        } INNINGS`}
         onBack={access.canScore ? pauseAndExit : onExit}
         backLabel="Back to match list"
         backLoading={exiting}
@@ -1539,9 +1675,7 @@ export default function ScoringPage({
                               <span className="score-action-copy">
                                 <strong>End innings</strong>
                                 <small>
-                                  {state.activeInnings === 0
-                                    ? "Move to the innings break"
-                                    : "Finish with the current score"}
+                                  Review the final runs, wickets and overs
                                 </small>
                               </span>
                               <span
@@ -1673,29 +1807,32 @@ export default function ScoringPage({
               <span>OVERS</span>
             </div>
           </div>
-          <div className="score-context">
+          <div className={`score-context${target ? " chase-context" : ""}`}>
             {target ? (
               <>
                 <span>
                   Target <strong>{target}</strong>
                 </span>
                 <span>
-                  Need <strong>{Math.max(0, target - innings.runs)}</strong>{" "}
-                  from <strong>{ballsRemaining}</strong>
+                  Need <strong>{requiredRuns}</strong> from{" "}
+                  <strong>{ballsRemaining}</strong>
+                </span>
+                <span>
+                  CRR <strong>{currentRunRate.toFixed(2)}</strong>
+                </span>
+                <span>
+                  RRR{" "}
+                  <strong>
+                    {requiredRunRate === null
+                      ? "—"
+                      : requiredRunRate.toFixed(2)}
+                  </strong>
                 </span>
               </>
             ) : (
               <>
                 <span>
-                  Run rate{" "}
-                  <strong>
-                    {innings.legalBalls
-                      ? (
-                          (innings.runs * match.rules.ballsPerOver) /
-                          innings.legalBalls
-                        ).toFixed(2)
-                      : "0.00"}
-                  </strong>
+                  Run rate <strong>{currentRunRate.toFixed(2)}</strong>
                 </span>
                 <span>{match.rules.overs} over match</span>
               </>
@@ -1740,7 +1877,22 @@ export default function ScoringPage({
                         {onStrike ? "*" : ""}
                       </span>
                       <p>
-                        <strong>{playerName(battingTeam, batterId)}</strong>
+                        <strong>
+                          {playerName(battingTeam, batterId)}
+                          {canChangeBatter && (
+                            <button
+                              type="button"
+                              className="change-batter-button"
+                              onClick={() =>
+                                setChangingBatterEnd(
+                                  onStrike ? "striker" : "non-striker",
+                                )
+                              }
+                            >
+                              Change
+                            </button>
+                          )}
+                        </strong>
                         <small>{onStrike ? "STRIKER" : "NON-STRIKER"}</small>
                       </p>
                       <b>
@@ -1773,20 +1925,26 @@ export default function ScoringPage({
             </section>
             <section className="live-over-strip">
               <span>THIS OVER</span>
-              <div>
-                {thisOver.length ? (
-                  thisOver.map((delivery) => (
-                    <i
-                      key={delivery.id}
-                      className={delivery.wicket ? "wicket" : ""}
-                    >
-                      {delivery.label}
-                    </i>
-                  ))
-                ) : (
-                  <small>First ball of the over</small>
-                )}
+              <div aria-label={`${ballsLeftInOver} legal balls remaining`}>
+                {thisOver.map((delivery) => (
+                  <i
+                    key={delivery.id}
+                    className={delivery.wicket ? "wicket" : ""}
+                  >
+                    {delivery.label === "•" ? "0" : delivery.label}
+                  </i>
+                ))}
+                {Array.from({ length: ballsLeftInOver }, (_, index) => (
+                  <i
+                    className="pending-ball"
+                    key={`pending-${index}`}
+                    aria-hidden="true"
+                  >
+                    –
+                  </i>
+                ))}
               </div>
+              <small className="balls-left">{ballsLeftInOver} left</small>
             </section>
             {access.canScore ? (
               <section className="live-controls">
@@ -1919,7 +2077,11 @@ export default function ScoringPage({
                     </strong>
                     <small>
                       {hasDraftSelection
-                        ? `${draftRuns} run${draftRuns === 1 ? "" : "s"} · ${draftIsLegal ? "legal ball" : "does not count in over"}`
+                        ? `${draftRuns} run${draftRuns === 1 ? "" : "s"} · ${
+                            draftIsLegal
+                              ? "legal ball"
+                              : "does not count in over"
+                          }`
                         : "–"}
                     </small>
                   </div>
@@ -1958,7 +2120,7 @@ export default function ScoringPage({
             state={state}
             onRemove={
               access.canScore
-                ? (deliveryId) => repairFromDelivery(deliveryId, true)
+                ? (deliveryId) => void removeDelivery(deliveryId)
                 : undefined
             }
           />
@@ -2104,7 +2266,12 @@ export default function ScoringPage({
               >
                 {scorerOptions.map((member) => (
                   <option value={member.userId} key={member.userId}>
-                    {member.name ? `${member.name}${member.email ? ` · ${member.email}` : ""}` : member.email || `${member.role} member`} · {member.role}
+                    {member.name
+                      ? `${member.name}${
+                          member.email ? ` · ${member.email}` : ""
+                        }`
+                      : member.email || `${member.role} member`}{" "}
+                    · {member.role}
                   </option>
                 ))}
               </select>
@@ -2130,10 +2297,45 @@ export default function ScoringPage({
           onDismiss={() => setChangingBowler(false)}
         />
       )}
+      {access.canScore &&
+        editingInningsIndex !== null &&
+        state.innings[editingInningsIndex] && (
+          <InningsSummarySheet
+            team={
+              match.teams.find(
+                (team) =>
+                  team.id === state.innings[editingInningsIndex].battingTeamId,
+              )!
+            }
+            innings={state.innings[editingInningsIndex]}
+            inningsNumber={editingInningsIndex + 1}
+            rules={match.rules}
+            wicketLimit={wicketLimitForTeam(
+              match,
+              state.innings[editingInningsIndex].battingTeamId,
+            )}
+            onDismiss={() => setEditingInningsIndex(null)}
+            onSave={(summary) =>
+              saveInningsSummary(editingInningsIndex, summary)
+            }
+          />
+        )}
+      {access.canScore && changingBatterEnd && (
+        <SelectionSheet
+          title={`Replace ${playerName(battingTeam, changingBatterEnd === "striker" ? state.strikerId : state.nonStrikerId)}`}
+          subtitle="RETIRED NOT OUT · CAN RETURN"
+          players={availableBatters}
+          onSelect={changeActiveBatter}
+          onEditTeams={() => setEditingTeams(true)}
+          onDismiss={() => setChangingBatterEnd(null)}
+        />
+      )}
       {access.canScore && state.phase === "new-batter" && (
         <SelectionSheet
           title="Choose the next batter"
-          subtitle={`${innings.wickets} wicket${innings.wickets === 1 ? "" : "s"} down`}
+          subtitle={`${innings.wickets} wicket${
+            innings.wickets === 1 ? "" : "s"
+          } down`}
           players={availableBatters}
           onSelect={chooseNewBatter}
           onEditTeams={() => setEditingTeams(true)}
@@ -2149,6 +2351,7 @@ export default function ScoringPage({
         />
       )}
       {toast && <div className="score-toast">{toast}</div>}
+      {confirmationSheet}
     </main>
   );
 }
@@ -2185,11 +2388,20 @@ function LiveMatchScorecard({
   )!;
   const battingFigures = new Map<
     string,
-    { runs: number; balls: number; fours: number; sixes: number }
+    {
+      runs: number;
+      balls: number;
+      fours: number;
+      sixes: number;
+    }
   >();
   const bowlingFigures = new Map<
     string,
-    { runs: number; balls: number; wickets: number }
+    {
+      runs: number;
+      balls: number;
+      wickets: number;
+    }
   >();
   const dismissals = new Map<string, string>();
 
@@ -2288,11 +2500,20 @@ function LiveMatchScorecard({
   );
   const score = `${selectedInnings.runs}/${selectedInnings.wickets}`;
   const overs = `${Math.floor(selectedInnings.legalBalls / match.rules.ballsPerOver)}.${selectedInnings.legalBalls % match.rules.ballsPerOver}`;
-  const battedPlayers = battingTeam.players.filter((player) =>
-    battingFigures.has(player.id),
+  const battingOrder = selectedInnings.battingOrder || [];
+  battingOrder.forEach((playerId) => {
+    if (!battingFigures.has(playerId))
+      battingFigures.set(playerId, { runs: 0, balls: 0, fours: 0, sixes: 0 });
+  });
+  const orderedBatterIds = Array.from(
+    new Set([...battingOrder, ...battingFigures.keys()]),
   );
+  const battedPlayers = orderedBatterIds.flatMap((playerId) => {
+    const player = battingTeam.players.find((item) => item.id === playerId);
+    return player ? [player] : [];
+  });
   const yetToBat = battingTeam.players.filter(
-    (player) => !battingFigures.has(player.id),
+    (player) => !orderedBatterIds.includes(player.id),
   );
   const bowlers = bowlingTeam.players.filter((player) =>
     bowlingFigures.has(player.id),
@@ -2301,11 +2522,20 @@ function LiveMatchScorecard({
   return (
     <section className="live-scorecard-view">
       <div className="live-scorecard-heading">
-        <div>
-          <span>MATCH SCORECARD</span>
-          <h2>
-            {match.teams[0].name} vs {match.teams[1].name}
-          </h2>
+        <span>MATCH SCORECARD</span>
+        <div
+          className="scorecard-matchup"
+          aria-label={`${match.teams[0].name} versus ${match.teams[1].name}`}
+        >
+          <div className="scorecard-matchup-team">
+            <b>{teamInitials(match.teams[0].name)}</b>
+            <strong>{match.teams[0].name}</strong>
+          </div>
+          <i>VS</i>
+          <div className="scorecard-matchup-team away">
+            <b>{teamInitials(match.teams[1].name)}</b>
+            <strong>{match.teams[1].name}</strong>
+          </div>
         </div>
       </div>
       <div
@@ -2335,6 +2565,11 @@ function LiveMatchScorecard({
               {selectedInningsIndex === 0 ? "ST" : "ND"} INNINGS
             </small>
             <strong>{battingTeam.name}</strong>
+            {selectedInnings.manuallyFinalized && (
+              <small className="manual-total-note">
+                Final total entered manually
+              </small>
+            )}
           </span>
           {recordedInnings ? (
             <b>
@@ -2356,7 +2591,12 @@ function LiveMatchScorecard({
           </div>
           {battedPlayers.map((player) => {
             const figures = battingFigures.get(player.id)!;
-            const status = dismissals.get(player.id) || "Not out";
+            const dismissal = dismissals.get(player.id);
+            const status =
+              dismissal ||
+              ((selectedInnings.retiredNotOut || []).includes(player.id)
+                ? "Retired not out · can return"
+                : "Not out");
             const strikeRate = figures.balls
               ? ((figures.runs * 100) / figures.balls).toFixed(1)
               : "—";
@@ -2463,79 +2703,222 @@ function BallByBallHistory({
         .map((item, inningsIndex) => ({ item, inningsIndex }))
         .reverse()
         .map(({ item, inningsIndex }) => {
-        if (!item.deliveries.length) return null;
-        const batting = match.teams.find(
-          (team) => team.id === item.battingTeamId,
-        )!;
-        const fielding = match.teams.find(
-          (team) => team.id !== item.battingTeamId,
-        )!;
-        let legalBalls = 0;
-        const newestFirst = item.deliveries
-          .map((delivery) => {
-            const ball = `${Math.floor(legalBalls / match.rules.ballsPerOver)}.${(legalBalls % match.rules.ballsPerOver) + 1}`;
-            if (delivery.legal) legalBalls += 1;
-            return { delivery, ball };
-          })
-          .reverse();
-        return (
-          <article
-            className="ball-history-innings"
-            key={`${item.battingTeamId}-${inningsIndex}`}
-          >
-            <header>
-              <div>
-                <span>{inningsIndex + 1} INNINGS</span>
-                <strong>{batting.name}</strong>
-              </div>
-              <b>
-                {item.runs}/{item.wickets}
-              </b>
-            </header>
-            <div className="ball-history-list">
-              {newestFirst.map(({ delivery, ball }) => {
-                const detail = delivery.wicket
-                  ? `${delivery.wicket.type.replace("-", " ")} · ${delivery.label}`
-                  : delivery.extraType
-                    ? `${delivery.extraType.replace("-", " ")} · ${delivery.label}`
-                    : delivery.batRuns
-                      ? `${delivery.batRuns} run${delivery.batRuns === 1 ? "" : "s"}`
-                      : "Dot ball";
-                const removable =
-                  inningsIndex === state.activeInnings && onRemove;
-                return (
-                  <div
-                    className={delivery.wicket ? "wicket" : ""}
-                    key={delivery.id}
-                  >
-                    <span className="ball-number">{ball}</span>
-                    <span className="ball-event">
-                      <strong>
-                        {playerName(fielding, delivery.bowlerId)} <i>to</i>{" "}
-                        {playerName(batting, delivery.strikerId)}
-                      </strong>
-                      <small>{detail}</small>
-                    </span>
-                    <b>{delivery.label}</b>
-                    {removable && (
-                      <span className="ball-actions">
-                        <button
-                          type="button"
-                          className="danger"
-                          onClick={() => onRemove(delivery.id)}
-                        >
-                          Remove
-                        </button>
+          if (!item.deliveries.length) return null;
+          const batting = match.teams.find(
+            (team) => team.id === item.battingTeamId,
+          )!;
+          const fielding = match.teams.find(
+            (team) => team.id !== item.battingTeamId,
+          )!;
+          let legalBalls = 0;
+          const newestFirst = item.deliveries
+            .map((delivery) => {
+              const ball = `${Math.floor(legalBalls / match.rules.ballsPerOver)}.${(legalBalls % match.rules.ballsPerOver) + 1}`;
+              if (delivery.legal) legalBalls += 1;
+              return { delivery, ball };
+            })
+            .reverse();
+          return (
+            <article
+              className="ball-history-innings"
+              key={`${item.battingTeamId}-${inningsIndex}`}
+            >
+              <header>
+                <div>
+                  <span>{inningsIndex + 1} INNINGS</span>
+                  <strong>{batting.name}</strong>
+                </div>
+                <b>
+                  {item.runs}/{item.wickets}
+                </b>
+              </header>
+              <div className="ball-history-list">
+                {newestFirst.map(({ delivery, ball }) => {
+                  const detail = delivery.wicket
+                    ? `${delivery.wicket.type.replace("-", " ")} · ${delivery.label}`
+                    : delivery.extraType
+                      ? `${delivery.extraType.replace("-", " ")} · ${delivery.label}`
+                      : delivery.batRuns
+                        ? `${delivery.batRuns} run${
+                            delivery.batRuns === 1 ? "" : "s"
+                          }`
+                        : "Dot ball";
+                  const removable =
+                    inningsIndex === state.activeInnings && onRemove;
+                  return (
+                    <div
+                      className={delivery.wicket ? "wicket" : ""}
+                      key={delivery.id}
+                    >
+                      <span className="ball-number">{ball}</span>
+                      <span className="ball-event">
+                        <strong>
+                          {playerName(fielding, delivery.bowlerId)} <i>to</i>{" "}
+                          {playerName(batting, delivery.strikerId)}
+                        </strong>
+                        <small>{detail}</small>
                       </span>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </article>
-        );
-      })}
+                      <b>{delivery.label}</b>
+                      {removable && (
+                        <span className="ball-actions">
+                          <button
+                            type="button"
+                            className="danger"
+                            onClick={() => onRemove(delivery.id)}
+                          >
+                            Remove
+                          </button>
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </article>
+          );
+        })}
     </section>
+  );
+}
+
+function InningsSummarySheet({
+  team,
+  innings,
+  inningsNumber,
+  rules,
+  wicketLimit,
+  editingCompletedMatch = false,
+  onDismiss,
+  onSave,
+}: {
+  team: MatchTeam;
+  innings: MatchScoreState["innings"][number];
+  inningsNumber: number;
+  rules: MatchRules;
+  wicketLimit: number;
+  editingCompletedMatch?: boolean;
+  onDismiss: () => void;
+  onSave: (summary: {
+    runs: number;
+    wickets: number;
+    legalBalls: number;
+  }) => void;
+}) {
+  const [runs, setRuns] = useState(String(innings.runs));
+  const [wickets, setWickets] = useState(String(innings.wickets));
+  const [overs, setOvers] = useState(
+    `${Math.floor(innings.legalBalls / rules.ballsPerOver)}.${innings.legalBalls % rules.ballsPerOver}`,
+  );
+  const [error, setError] = useState("");
+
+  function submit(event: React.FormEvent) {
+    event.preventDefault();
+    const parsedRuns = Number(runs);
+    const parsedWickets = Number(wickets);
+    const oversMatch = overs.trim().match(/^(\d+)(?:\.(\d+))?$/);
+    const completedOvers = oversMatch ? Number(oversMatch[1]) : NaN;
+    const balls = oversMatch?.[2] ? Number(oversMatch[2]) : 0;
+    const legalBalls = completedOvers * rules.ballsPerOver + balls;
+
+    if (!Number.isInteger(parsedRuns) || parsedRuns < 0) {
+      setError("Enter a valid runs total.");
+      return;
+    }
+    if (
+      !Number.isInteger(parsedWickets) ||
+      parsedWickets < 0 ||
+      parsedWickets > wicketLimit
+    ) {
+      setError(`Wickets must be between 0 and ${wicketLimit}.`);
+      return;
+    }
+    if (
+      !oversMatch ||
+      !Number.isInteger(balls) ||
+      balls >= rules.ballsPerOver ||
+      legalBalls > rules.overs * rules.ballsPerOver
+    ) {
+      setError(
+        `Enter overs in cricket format up to ${rules.overs}.0. The ball value must be 0–${rules.ballsPerOver - 1}.`,
+      );
+      return;
+    }
+
+    onSave({
+      runs: parsedRuns,
+      wickets: parsedWickets,
+      legalBalls,
+    });
+  }
+
+  return (
+    <div className="score-sheet-backdrop" onMouseDown={onDismiss}>
+      <form
+        className="score-sheet innings-summary-sheet"
+        onSubmit={submit}
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="sheet-handle" />
+        <span className="score-sheet-kicker">
+          {inningsNumber === 1 ? "1ST" : "2ND"} INNINGS · {team.name}
+        </span>
+        <div className="selection-sheet-heading">
+          <h2>{editingCompletedMatch ? "Edit final score" : "End innings"}</h2>
+          <button type="button" onClick={onDismiss} aria-label="Close">
+            ×
+          </button>
+        </div>
+        <p>
+          Confirm the final innings total. You can enter a complete score even
+          when every delivery was not recorded.
+        </p>
+        <div className="innings-summary-fields">
+          <label>
+            <span>Runs</span>
+            <input
+              type="number"
+              min="0"
+              inputMode="numeric"
+              value={runs}
+              onChange={(event) => setRuns(event.target.value)}
+              autoFocus
+            />
+          </label>
+          <label>
+            <span>Wickets</span>
+            <input
+              type="number"
+              min="0"
+              max={wicketLimit}
+              inputMode="numeric"
+              value={wickets}
+              onChange={(event) => setWickets(event.target.value)}
+            />
+          </label>
+          <label>
+            <span>Overs</span>
+            <input
+              type="text"
+              inputMode="decimal"
+              value={overs}
+              onChange={(event) => setOvers(event.target.value)}
+              placeholder="0.0"
+            />
+          </label>
+        </div>
+        <small className="innings-summary-help">
+          Use cricket notation, for example 7.4 means 7 overs and 4 balls.
+        </small>
+        {error && <div className="score-sheet-error">{error}</div>}
+        <button type="submit" className="score-primary-action">
+          {editingCompletedMatch
+            ? "Update score and result"
+            : inningsNumber === 1
+              ? "Save score & start innings break"
+              : "Save score & complete match"}
+        </button>
+      </form>
+    </div>
   );
 }
 
@@ -3160,6 +3543,7 @@ function SecondInningsSetup({
   onEditTeams,
   onEditRules,
   onStart,
+  onEnterFinal,
 }: {
   batting: MatchTeam;
   fielding: MatchTeam;
@@ -3170,6 +3554,7 @@ function SecondInningsSetup({
   onEditTeams: () => void;
   onEditRules: () => void;
   onStart: (striker: string, nonStriker: string, bowler: string) => void;
+  onEnterFinal: (striker: string, nonStriker: string, bowler: string) => void;
 }) {
   const [striker, setStriker] = useState(batting.players[0]?.id || "");
   const [nonStriker, setNonStriker] = useState(batting.players[1]?.id || "");
@@ -3179,7 +3564,7 @@ function SecondInningsSetup({
     <main className="full-score-shell innings-break-page">
       <PageHeader
         title="Innings break"
-        eyebrow="MATCH PAUSED"
+        eyebrow="MATCH LIVE"
         onBack={onBack}
         backLabel="Back to match list"
         backLoading={exiting}
@@ -3261,6 +3646,14 @@ function SecondInningsSetup({
             disabled={exiting}
           >
             Undo innings-ending delivery
+          </button>
+          <button
+            type="button"
+            className="score-secondary-action enter-final-score"
+            disabled={!valid || exiting}
+            onClick={() => onEnterFinal(striker, nonStriker, bowler)}
+          >
+            Enter final innings score
           </button>
           <button
             type="button"
